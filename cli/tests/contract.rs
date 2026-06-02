@@ -441,3 +441,143 @@ fn missing_config_is_a_structured_error() {
         .stderr(predicate::str::contains(r#""error""#))
         .stderr(predicate::str::contains("not logged in"));
 }
+
+#[test]
+fn tx_reclassify_posts_classification_and_learn_with_bearer() {
+    let mut server = mockito::Server::new();
+    let mock = server
+        .mock("POST", "/api/integrations/transactions/txn_77/reclassify")
+        .match_header("authorization", BEARER)
+        .match_body(Matcher::JsonString(
+            r#"{"classification":"mixed","learn":true}"#.to_string(),
+        ))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"ok":true,"classification":"mixed","learned":true}"#)
+        .create();
+
+    easybooks()
+        .env("EASYBOOKS_API_URL", server.url())
+        .env("EASYBOOKS_API_KEY", KEY)
+        .args([
+            "tx",
+            "reclassify",
+            "txn_77",
+            "--class",
+            "mixed",
+            "--learn",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""classification": "mixed""#));
+
+    mock.assert();
+}
+
+#[test]
+fn tx_reclassify_defaults_learn_false() {
+    let mut server = mockito::Server::new();
+    let mock = server
+        .mock("POST", "/api/integrations/transactions/txn_77/reclassify")
+        .match_header("authorization", BEARER)
+        .match_body(Matcher::JsonString(
+            r#"{"classification":"personal","learn":false}"#.to_string(),
+        ))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"ok":true}"#)
+        .create();
+
+    easybooks()
+        .env("EASYBOOKS_API_URL", server.url())
+        .env("EASYBOOKS_API_KEY", KEY)
+        .args(["tx", "reclassify", "txn_77", "--class", "personal"])
+        .assert()
+        .success();
+
+    mock.assert();
+}
+
+#[test]
+fn tx_attach_receipt_uploads_base64_and_prints_receipt_url() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let file = dir.path().join("receipt.pdf");
+    // "%PDF-1.4" → base64 "JVBERi0xLjQ=".
+    std::fs::write(&file, b"%PDF-1.4").expect("write fixture");
+
+    let mut server = mockito::Server::new();
+    let mock = server
+        .mock("POST", "/api/integrations/transactions/txn_88/receipt")
+        .match_header("authorization", BEARER)
+        .match_body(Matcher::JsonString(
+            r#"{"filename":"receipt.pdf","content_type":"application/pdf","content_base64":"JVBERi0xLjQ="}"#
+                .to_string(),
+        ))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"ok":true,"receipt_url":"https://cdn.example/receipts/txn_88.pdf"}"#)
+        .create();
+
+    easybooks()
+        .env("EASYBOOKS_API_URL", server.url())
+        .env("EASYBOOKS_API_KEY", KEY)
+        .args([
+            "tx",
+            "attach-receipt",
+            "txn_88",
+            "--file",
+            file.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "https://cdn.example/receipts/txn_88.pdf",
+        ));
+
+    mock.assert();
+}
+
+#[test]
+fn tx_attach_receipt_refuses_oversize_file_locally() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let file = dir.path().join("big.png");
+    // 10 MiB + 1 byte → over the local ceiling; must fail before any network.
+    std::fs::write(&file, vec![0u8; 10 * 1024 * 1024 + 1]).expect("write fixture");
+
+    // Point at an unroutable URL; if the CLI tried to POST it would hang/fail,
+    // but the size guard must short-circuit first with a clear message.
+    easybooks()
+        .env("EASYBOOKS_API_URL", "http://127.0.0.1:9")
+        .env("EASYBOOKS_API_KEY", KEY)
+        .args([
+            "tx",
+            "attach-receipt",
+            "txn_88",
+            "--file",
+            file.to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("10 MB limit"));
+}
+
+#[test]
+fn tx_attach_receipt_rejects_unsupported_extension() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let file = dir.path().join("notes.txt");
+    std::fs::write(&file, b"hello").expect("write fixture");
+
+    easybooks()
+        .env("EASYBOOKS_API_URL", "http://127.0.0.1:9")
+        .env("EASYBOOKS_API_KEY", KEY)
+        .args([
+            "tx",
+            "attach-receipt",
+            "txn_88",
+            "--file",
+            file.to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unsupported receipt type"));
+}

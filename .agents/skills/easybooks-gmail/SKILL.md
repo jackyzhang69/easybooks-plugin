@@ -49,6 +49,8 @@ Notes:
 
 For each promising message, open it via the Gmail MCP, read the body (and parse any PDF/image attachment the same way `easybooks-record` describes), and build one Entry. Capture the **Gmail message id** as `source_id`.
 
+**ALWAYS set `source_payload.from` to the email's sender (the From address) on every entry.** The classifier learns business-vs-personal **by sender**, so the From address is what powers self-learning: once the user corrects a sender's classification, future receipts from that same sender are classified automatically. An entry missing `from` cannot be learned on. (Aggregator senders like paypal.com / stripe.com forward many different merchants, so the system does not learn on those — still record `from`, but expect to classify per-receipt.)
+
 ```json
 {
   "source_system": "gmail",
@@ -70,7 +72,9 @@ For each promising message, open it via the Gmail MCP, read the body (and parse 
 
 - `amount_cents` is an integer (cents): $45.99 → `4599`.
 - `type` is usually `expense` for purchase receipts; an income receipt (a payment you received) is `income`. Decide per message.
-- `category_name` optional (backend resolves the name). `classification` defaults to `business`; flag anything that looks personal and ask.
+- `source_payload.from` is **required on every entry** — the sender address the classifier learns on (see above).
+- `category_name` optional (backend resolves the name). For `classification`, use the **three labels** `business` / `mixed` (partially deductible) / `personal` (pure). Don't silently default an unknown to `business` — ask, or mark it needs-review. Once the user corrects a sender, the system remembers it (learning).
+- **Offer to attach the email or its PDF/image attachment as the receipt** for each entry: either inline on the entry as `receipt: { filename, content_type, content_base64 }`, or after recording with `"$EASYBOOKS_BIN" tx attach-receipt <transaction_id> --file <path>` (supported: png/jpg/jpeg/gif/webp/heic/heif/pdf; files over 10 MB are refused locally).
 - One message = one Entry as a rule. If a single email contains several distinct charges, you may emit multiple entries but they then need distinct, stable `source_id`s (e.g. `<message-id>#1`, `<message-id>#2`) — keep them deterministic.
 
 ## Step 3 — dry-run, confirm, record
@@ -112,7 +116,8 @@ In v2 the CLI gains native Gmail OAuth: `gmail sync` will pull candidate receipt
 
 - Always `--dry-run` first and show the user the extracted rows before recording — email parsing is error-prone (marketing vs real receipts, wrong totals).
 - When unsure whether a message is a real receipt, skip it and tell the user, rather than recording a guess.
-- Ask one specific question on ambiguous category/classification rather than defaulting silently.
+- Ask one specific question on ambiguous category/classification rather than defaulting silently — classify per the three labels (business / mixed / personal); an unknown that stays unknown is needs-review, not `business`.
+- Always set `source_payload.from` so the classifier can learn by sender, and offer to attach the email/PDF as the receipt.
 
 ## Governance
 

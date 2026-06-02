@@ -35,7 +35,7 @@ All commands shell out to the bundled `easybooks` CLI. Resolve it once via `easy
 - `--amount` is a decimal (dollars), e.g. `120.00`. (Batch import JSON uses integer `amount_cents` instead — don't mix the two.)
 - `--date` is `YYYY-MM-DD`.
 - `--category` is a **name**; the backend resolves it to an id. Never pass a `category_id`. If unsure what categories exist, run `categories list` first.
-- `--classification` defaults to `business` when omitted. Ask the user if business-vs-personal is ambiguous — it affects their books.
+- `--classification` is one of the three deductibility labels — see **Classify every receipt** below. Never silently default an unknown purchase to `business`; ask, or mark it needs-review. Classification affects what the user can deduct.
 - For a value you parsed from a document (not stated by the user), prefer the import path so it carries a `--source-id` / `source_id` for idempotency.
 
 ## Resolve categories (never guess an id)
@@ -98,8 +98,50 @@ Each `<Entry>`:
 
 - **`amount_cents` is an integer** (cents). $120.00 → `12000`. Do the conversion when you build the JSON.
 - **`source_id` is REQUIRED for imports** and must be stable for the same underlying document. Good choices: the supplier invoice number, a hash of `(vendor + date + amount)` for a statement line, the receipt number, or the email/Gmail message id. This is what makes re-imports safe.
-- `category_name` is optional; the backend resolves the name to an id. `classification` defaults to `business`.
+- `category_name` is optional; the backend resolves the name to an id. For `classification` see **Classify every receipt** below.
 - Zero-amount rows are skipped server-side.
+- An entry can carry the original document inline as `receipt: { filename, content_type, content_base64 }`, OR you can attach it after recording with `tx attach-receipt` (see **Attach the original document**).
+
+## Classify every receipt — business / mixed / personal
+
+Every recorded expense needs a deductibility classification. There are **three** labels:
+
+| Label | Meaning | Example |
+|---|---|---|
+| `business` | Fully deductible — wholly a business cost | software subscription, client lunch, professional fees |
+| `mixed` | **Partially deductible** — split business/personal use | a phone bill, a car cost, a home-office utility |
+| `personal` | **Pure personal** — not deductible at all | groceries, a personal Netflix plan |
+
+Rules:
+- After recording (or while building the Entry JSON), set the right label.
+- **If you are unsure, ask the user one specific question.** Do **not** silently default an unknown purchase to `business`.
+- When it stays unknown after asking, mark it **needs-review** (leave classification unset / flag it to the user) — never guess `business` to make the row "complete".
+- **Correcting a classification teaches the system.** When the user fixes a label with `tx reclassify <id> --class <label> --learn`, the backend remembers that *sender/source* and classifies future transactions from them the same way. So a one-time correction pays off on every later receipt from that vendor.
+
+```sh
+# Correct a recorded transaction and teach the system to remember this sender:
+"$EASYBOOKS_BIN" tx reclassify <transaction_id> --class business|mixed|personal --learn
+# Without --learn it just corrects this one transaction (no learning):
+"$EASYBOOKS_BIN" tx reclassify <transaction_id> --class mixed
+```
+
+## Attach the original document
+
+Keep the source document with the transaction so the books are audit-ready. Two ways:
+
+1. **Inline on ingest** — add a `receipt` object to the Entry:
+   ```json
+   { "...": "...", "receipt": { "filename": "adobe-may.pdf", "content_type": "application/pdf", "content_base64": "<base64>" } }
+   ```
+2. **After recording** — attach the file by path; the CLI reads it, guesses the content type by extension, base64-encodes it, and uploads:
+   ```sh
+   "$EASYBOOKS_BIN" tx attach-receipt <transaction_id> --file /path/to/receipt.pdf
+   ```
+   - Supported types: `png`, `jpg/jpeg`, `gif`, `webp`, `heic`, `heif`, `pdf`.
+   - Files over **10 MB are refused locally** with a clear error — compress or attach a smaller copy.
+   - On success the CLI prints the `receipt_url` where the document now lives.
+
+When the user "drops a receipt", the ideal flow is: record the transaction **and** attach the original document, then classify it.
 
 ## Idempotency — read this before recording
 
@@ -118,6 +160,8 @@ Recorded rows are upserted on **`(user_id, source_system, source_id)`**. That me
 | "record $X income / a payment I received on `<date>`" | `"$EASYBOOKS_BIN" income add --amount <d> --description "<t>" --date <YYYY-MM-DD> [--category "<name>"]` |
 | "record this receipt / supplier invoice / screenshot / PDF" | parse locally → Entry JSON → `tx import-json --json '<json>' --dry-run` → confirm → rerun without `--dry-run` |
 | "import this spreadsheet / CSV / bank statement of expenses" | parse rows locally → batch Entry JSON → `tx import-json --dry-run` → confirm → rerun |
+| "this should be personal / mixed, not business" / "fix the classification" | `"$EASYBOOKS_BIN" tx reclassify <id> --class business\|mixed\|personal [--learn]` |
+| "attach the receipt / PDF to this transaction" | `"$EASYBOOKS_BIN" tx attach-receipt <id> --file <path>` |
 | "what categories do I have" | `"$EASYBOOKS_BIN" categories list [--type income\|expense]` |
 | "scan my Gmail for receipts" | hand off to **easybooks-gmail** (uses `gmail record`, source_id = message id) |
 
@@ -125,7 +169,8 @@ Recorded rows are upserted on **`(user_id, source_system, source_id)`**. That me
 
 - A single quick `expense add` / `income add` where the user stated every field can be run directly.
 - For **any document import**, always `--dry-run` first and show the resolved rows. Money accuracy beats a saved round-trip. Confirm amounts and the business/personal classification.
-- If classification or category is ambiguous, ask one specific question — don't silently default to `business` on a personal purchase.
+- If classification or category is ambiguous, ask one specific question — don't silently default to `business` on a personal or mixed purchase. An unknown that stays unknown is **needs-review**, not `business`.
+- When you record a dropped receipt/expense, also (a) classify it business / mixed / personal and (b) attach the original document (inline `receipt` on the entry, or `tx attach-receipt` after). A correction with `tx reclassify --learn` teaches the system to remember that sender.
 - When the CLI returns a structured error with a `hint`, surface it verbatim.
 
 ## Governance
