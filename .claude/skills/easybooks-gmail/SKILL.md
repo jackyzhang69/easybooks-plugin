@@ -49,6 +49,10 @@ Notes:
 
 For each promising message, open it via the Gmail MCP, read the body (and parse any PDF/image attachment the same way `easybooks-record` describes), and build one Entry. Capture the **Gmail message id** as `source_id`.
 
+**ALWAYS set `source_payload.from` to the email's sender (the From address) on every entry.** The classifier learns business-vs-personal **by sender**, so the From address is what powers self-learning: once the user corrects a sender's classification, future receipts from that same sender are classified automatically. An entry missing `from` cannot be learned on. (Aggregator senders like paypal.com / stripe.com forward many different merchants, so the system does not learn on those — still record `from`, but expect to classify per-receipt.)
+
+**PURE-PERSONAL ITEMS ARE NOT RECORDED — the server auto-drops them.** You still extract and submit the entry with `source_payload.from` exactly as above (don't pre-filter in the agent), but the server will **skip recording any entry that resolves to personal** and report it under `skipped_personal` instead of `created`. An entry "resolves to personal" when EITHER you set `classification: "personal"` on it, OR its sender is one the user has already **taught is pure-personal** (a confident learned rule). For such entries the server writes **no transaction row and uploads no receipt** — so once a sender is marked personal, future emails from it are silently auto-dropped, not booked. This is by design: pure-personal spend doesn't belong in the books. It does **not** apply to `mixed` (partially deductible) or to a sender that only has a tentative/suggestion classification — those are still recorded for the user to confirm.
+
 ```json
 {
   "source_system": "gmail",
@@ -70,7 +74,9 @@ For each promising message, open it via the Gmail MCP, read the body (and parse 
 
 - `amount_cents` is an integer (cents): $45.99 → `4599`.
 - `type` is usually `expense` for purchase receipts; an income receipt (a payment you received) is `income`. Decide per message.
-- `category_name` optional (backend resolves the name). `classification` defaults to `business`; flag anything that looks personal and ask.
+- `source_payload.from` is **required on every entry** — the sender address the classifier learns on (see above).
+- `category_name` optional (backend resolves the name). For `classification`, use the **three labels** `business` / `mixed` (partially deductible) / `personal` (pure). Don't silently default an unknown to `business` — ask, or mark it needs-review. Once the user corrects a sender, the system remembers it (learning).
+- **Offer to attach the email or its PDF/image attachment as the receipt** for each entry: either inline on the entry as `receipt: { filename, content_type, content_base64 }`, or after recording with `"$EASYBOOKS_BIN" tx attach-receipt <transaction_id> --file <path>` (supported: png/jpg/jpeg/gif/webp/heic/heif/pdf; files over 10 MB are refused locally).
 - One message = one Entry as a rule. If a single email contains several distinct charges, you may emit multiple entries but they then need distinct, stable `source_id`s (e.g. `<message-id>#1`, `<message-id>#2`) — keep them deterministic.
 
 ## Step 3 — dry-run, confirm, record
@@ -83,7 +89,7 @@ For each promising message, open it via the Gmail MCP, read the body (and parse 
 "$EASYBOOKS_BIN" gmail record --json '<json>'
 ```
 
-Output is `{ "created":n, "existing":n, "skipped":n, "processed":n }`. On a re-scan, expect `created: 0` and `existing` = the count already recorded — **that is success** (idempotency working), not a failure to fix.
+Output is `{ "created":n, "existing":n, "skipped":n, "skipped_personal":n, "processed":n }`. On a re-scan, expect `created: 0` and `existing` = the count already recorded — **that is success** (idempotency working), not a failure to fix. `skipped_personal` counts entries the server dropped because they resolved to personal (explicit `personal`, or a sender the user taught is pure-personal) — those were intentionally **not** booked and carry no receipt; report them to the user as "skipped (personal)", not as an error.
 
 `easybooks gmail record` is exactly `tx import-json` with `source_system` defaulted to `gmail`; you may also call `tx import-json` directly as long as `source_system` is `gmail` and each `source_id` is the message id.
 
@@ -112,7 +118,9 @@ In v2 the CLI gains native Gmail OAuth: `gmail sync` will pull candidate receipt
 
 - Always `--dry-run` first and show the user the extracted rows before recording — email parsing is error-prone (marketing vs real receipts, wrong totals).
 - When unsure whether a message is a real receipt, skip it and tell the user, rather than recording a guess.
-- Ask one specific question on ambiguous category/classification rather than defaulting silently.
+- Ask one specific question on ambiguous category/classification rather than defaulting silently — classify per the three labels (business / mixed / personal); an unknown that stays unknown is needs-review, not `business`.
+- Always set `source_payload.from` so the classifier can learn by sender, and offer to attach the email/PDF as the receipt.
+- Remember pure-personal entries are **not booked**: if you mark an entry `personal`, or its sender is already taught-personal, the server drops it (counted in `skipped_personal`, no row, no receipt). Surface those to the user as "skipped (personal)" so they know the email was seen but intentionally not recorded.
 
 ## Governance
 

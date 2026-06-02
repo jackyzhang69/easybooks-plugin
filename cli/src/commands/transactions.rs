@@ -265,11 +265,11 @@ fn validate_date(d: &str) -> Result<()> {
 }
 
 fn validate_classification(c: &str) -> Result<()> {
-    if c == "business" || c == "personal" {
+    if c == "business" || c == "mixed" || c == "personal" {
         Ok(())
     } else {
         Err(anyhow!(
-            "classification must be \"business\" or \"personal\" (got {:?})",
+            "classification must be \"business\", \"mixed\", or \"personal\" (got {:?})",
             c
         ))
     }

@@ -32,6 +32,8 @@ User said this → call this exact command (binary resolution: §B; file-drop de
 | "record / log a $X **income** / payment received on `<date>`" | `easybooks income add --amount <d> --description "<t>" --date <YYYY-MM-DD> [--category <name>]` | easybooks-record |
 | "here's a **receipt / invoice file** (PDF / image / Excel / CSV / email / text) — record it" | parse locally → build Entry JSON (§2) → `easybooks tx import-json --json '<json>' --dry-run` → show user → rerun without `--dry-run` | easybooks-record |
 | "record **several** transactions / a statement / a spreadsheet of expenses" | parse locally → batch Entry JSON → `easybooks tx import-json --json '<json>' --dry-run` → confirm → rerun | easybooks-record |
+| "this is **personal / mixed**, not business" / "**fix the classification**" | `easybooks tx reclassify <id> --class business\|mixed\|personal [--learn]` (`--learn` remembers the sender) | easybooks-record |
+| "**attach** the receipt / PDF to this transaction" | `easybooks tx attach-receipt <id> --file <path>` (reads locally, <=10MB, base64; prints `receipt_url`) | easybooks-record |
 | "**create an invoice** for `<client>` for `<items>`" | resolve client → build invoice JSON (§2) → `easybooks invoice create --json '<json>' --dry-run` → confirm → rerun | easybooks-invoice |
 | "**send** invoice `<id>` / email the invoice/receipt" | `easybooks invoice send <invoice_id>` (CONFIRM first — it emails the client) | easybooks-invoice |
 | "**scan my Gmail** for receipts / invoices and record them" | read candidates via Gmail MCP → extract to Entry JSON with `source_id` = Gmail message id → `easybooks gmail record --json '<json>' --dry-run` → confirm → rerun | easybooks-gmail |
@@ -135,7 +137,7 @@ Use this whenever the user gives you a file or pastes content: receipt photo, sc
 3. **Assign a stable `source_id` per entry** so re-imports are idempotent (invoice number, statement line hash, Gmail message id, etc.). Never omit it for document imports.
 4. **Dry-run first:** `easybooks tx import-json --json '<json>' --dry-run`. This validates + echoes the resolved rows without writing.
 5. **Show the user the resolved rows** (amount, date, category, classification, type). Get confirmation, especially for amounts and business-vs-personal classification.
-6. **Record for real:** rerun the same command **without** `--dry-run`. Output is `{ "created":n, "existing":n, "skipped":n, "processed":n }` — `existing` > 0 means idempotency already had those rows; that is success, not an error.
+6. **Record for real:** rerun the same command **without** `--dry-run`. Output is `{ "created":n, "existing":n, "skipped":n, "skipped_personal":n, "processed":n }` — `existing` > 0 means idempotency already had those rows; that is success, not an error. `skipped_personal` > 0 means the server **dropped** entries that resolved to personal (see §1 taxonomy / self-learning) — they were intentionally not booked.
 
 Single quick one-off (no file)? Use `easybooks income add` / `easybooks expense add` directly instead of building batch JSON. Full detail: `easybooks-record`.
 
@@ -150,12 +152,29 @@ Single quick one-off (no file)? Use `easybooks income add` / `easybooks expense 
   "description": "Adobe Creative Cloud",
   "date": "2026-05-01",
   "category_name": "Software",          // optional; backend resolves to id
-  "classification": "business|personal", // optional; defaults business
+  "classification": "business|mixed|personal", // optional; see taxonomy below — don't silently default to business
   "source_type": "receipt|invoice|email|statement", // optional
   "source_id": "stable-unique-id",      // REQUIRED for idempotency on imports
-  "source_payload": { }                  // optional raw extracted blob
+  "source_payload": { "from": "billing@vendor.com" }, // include sender `from` so the classifier learns by sender
+  "receipt": { "filename": "rcpt.pdf", "content_type": "application/pdf", "content_base64": "<base64>" } // optional; original document (or attach later with `tx attach-receipt`)
 }
 ```
+
+### Classification taxonomy + self-learning (READ)
+
+Three deductibility labels — never just two, and never silently default an unknown to `business`:
+
+| Label | Meaning |
+|---|---|
+| `business` | Fully deductible — wholly a business cost |
+| `mixed` | Partially deductible — split business/personal use |
+| `personal` | Pure personal — not deductible |
+
+If unsure, ask one specific question; if it stays unknown, mark it **needs-review** (don't guess `business`).
+
+**Self-learning:** correcting a classification with `easybooks tx reclassify <id> --class <label> --learn` teaches the system to remember that **sender** (keyed off `source_payload.from`), so future transactions from the same sender are classified automatically. Correct once → it remembers. Aggregator senders (e.g. `paypal.com`, `stripe.com`) forward many different merchants, so the system does **not** learn on those — classify those per-receipt.
+
+**Pure-personal is NOT recorded (server-side drop):** an entry that resolves to `personal` is **not booked at all** — no transaction row, no receipt upload — and is returned under `skipped_personal` instead of `created`. It resolves to personal when EITHER the entry carries `classification: "personal"`, OR its sender is one the user has already taught is pure-personal (a confident learned rule, via `reclassify --class personal --learn`). So after you teach a sender as personal, future emails from it are auto-dropped, not recorded. Still submit such entries with `source_payload.from` (don't pre-filter in the agent) — the server decides and reports the count. This applies only to `personal`; `mixed` and not-yet-confident senders are still recorded for review.
 
 `tx import-json` / `gmail record` JSON envelope (the user is identified by the API key, so no owner id):
 ```json
@@ -179,7 +198,7 @@ Server computes subtotal / tax / total and generates the `INV-` invoice number. 
 | User says (any phrasing) | Skill | Entry point |
 |---|---|---|
 | "connect / set up EasyBooks / save my key" | **connect-easybooks** | `easybooks login` then `whoami` / `doctor` |
-| "log an expense / income", "record this receipt / file / image / PDF / statement" | **easybooks-record** | `expense add` / `income add` / `tx import-json` |
+| "log an expense / income", "record this receipt / file / image / PDF / statement", "fix a classification", "attach a receipt" | **easybooks-record** | `expense add` / `income add` / `tx import-json` / `tx reclassify` / `tx attach-receipt` |
 | "create an invoice", "send invoice X", "list my clients / invoices" | **easybooks-invoice** | `invoice create` / `invoice send` / `clients` / `invoices list` |
 | "scan my Gmail for receipts / invoices and record them" | **easybooks-gmail** | Gmail MCP read → `gmail record` |
 | "is my plugin healthy / which backend am I on" | this file | `easybooks doctor --json` |
@@ -191,6 +210,7 @@ Server computes subtotal / tax / total and generates the `INV-` invoice number. 
 | Connect / health | `login`, `whoami`, `doctor` |
 | Reads (resolve names → ids) | `categories list [--type income\|expense]`, `clients list`, `clients find --query <q>`, `invoices list [--status <s>]` |
 | Record transactions | `income add ...`, `expense add ...`, `tx import-json --json '<json>' [--dry-run]` |
+| Classify / receipts | `tx reclassify <id> --class business\|mixed\|personal [--learn]`, `tx attach-receipt <id> --file <path>` |
 | Invoices | `invoice create --json '<json>' [--dry-run]`, `invoice send <invoice_id>` |
 | Gmail (v1) | `gmail record --json '<json>' [--dry-run]` (alias of `tx import-json`, `source_system` defaults to `gmail`), `gmail sync` (v1 stub) |
 
@@ -202,7 +222,7 @@ Treat `<easybooks> --help` as runtime truth when docs and code drift.
 |---|---|---|
 | Parsing files / OCR / reading Excel-CSV-PDF-email | **Local (agent)** | none |
 | Reading Gmail candidate messages | **Local (Gmail MCP)** | the MCP's own |
-| `categories/clients/invoices list/find`, `whoami`, all records, `invoice create/send`, `gmail record` | **Backend** call (HTTP to the configured base-url) | required |
+| `categories/clients/invoices list/find`, `whoami`, all records, `tx reclassify`, `tx attach-receipt`, `invoice create/send`, `gmail record` | **Backend** call (HTTP to the configured base-url) | required |
 | `doctor --no-fetch` | **Local** config read | none |
 | `doctor` (default) / `whoami` | **Backend** round-trip | required |
 

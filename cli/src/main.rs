@@ -10,7 +10,7 @@ use easybooks_cli::bootstrap;
 
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use commands::{gmail, invoices, read, setup, transactions};
+use commands::{gmail, invoices, read, setup, transactions, tx_ops};
 
 #[derive(Parser)]
 #[command(name = "easybooks")]
@@ -154,6 +154,26 @@ impl Classification {
     }
 }
 
+/// Reclassification label for an already-recorded transaction. Unlike the
+/// `Classification` used on `income/expense add` (business/personal only), a
+/// correction may set `mixed` — a partially deductible transaction.
+#[derive(Clone, ValueEnum)]
+enum ReclassClass {
+    Business,
+    Mixed,
+    Personal,
+}
+
+impl ReclassClass {
+    fn as_str(&self) -> &'static str {
+        match self {
+            ReclassClass::Business => "business",
+            ReclassClass::Mixed => "mixed",
+            ReclassClass::Personal => "personal",
+        }
+    }
+}
+
 /// Shared flag set for `income add` / `expense add`.
 #[derive(Args)]
 struct EntryAddArgs {
@@ -231,6 +251,27 @@ enum TxSub {
         json: String,
         #[arg(long = "dry-run", default_value_t = false)]
         dry_run: bool,
+    },
+    /// Correct a transaction's classification (business|mixed|personal). With
+    /// `--learn` the backend remembers the correction for that sender.
+    Reclassify {
+        /// The transaction id to reclassify.
+        transaction_id: String,
+        /// New classification: business | mixed | personal.
+        #[arg(long = "class", value_enum)]
+        class: ReclassClass,
+        /// Teach the system to remember this sender's classification.
+        #[arg(long, default_value_t = false)]
+        learn: bool,
+    },
+    /// Attach a receipt document (image/PDF) to a transaction. The file is read
+    /// locally, size-checked (<=10MB), and base64-encoded before upload.
+    AttachReceipt {
+        /// The transaction id to attach the receipt to.
+        transaction_id: String,
+        /// Path to the receipt file (png/jpg/jpeg/gif/webp/heic/heif/pdf).
+        #[arg(long)]
+        file: String,
     },
 }
 
@@ -334,6 +375,15 @@ fn dispatch(command: Command, base_url_arg: Option<String>) -> Result<()> {
             TxSub::ImportJson { json, dry_run } => {
                 transactions::import_json(&client, &json, dry_run)
             }
+            TxSub::Reclassify {
+                transaction_id,
+                class,
+                learn,
+            } => tx_ops::reclassify(&client, &transaction_id, class.as_str(), learn),
+            TxSub::AttachReceipt {
+                transaction_id,
+                file,
+            } => tx_ops::attach_receipt(&client, &transaction_id, &file),
         },
         Command::Invoice(cmd) => match cmd.command {
             InvoiceSub::Create { json, dry_run } => invoices::create(&client, &json, dry_run),
@@ -391,6 +441,54 @@ mod tests {
             "--dry-run",
         ])
         .expect("tx import-json should parse");
+        match cli.command {
+            super::Command::Tx(_) => {}
+            _ => panic!("expected tx command"),
+        }
+    }
+
+    #[test]
+    fn parses_tx_reclassify() {
+        let cli = Cli::try_parse_from([
+            "easybooks",
+            "tx",
+            "reclassify",
+            "txn_123",
+            "--class",
+            "mixed",
+            "--learn",
+        ])
+        .expect("tx reclassify should parse");
+        match cli.command {
+            super::Command::Tx(_) => {}
+            _ => panic!("expected tx command"),
+        }
+    }
+
+    #[test]
+    fn rejects_bad_reclassify_class() {
+        let result = Cli::try_parse_from([
+            "easybooks",
+            "tx",
+            "reclassify",
+            "txn_123",
+            "--class",
+            "deductible",
+        ]);
+        assert!(result.is_err(), "invalid --class should be rejected by clap");
+    }
+
+    #[test]
+    fn parses_tx_attach_receipt() {
+        let cli = Cli::try_parse_from([
+            "easybooks",
+            "tx",
+            "attach-receipt",
+            "txn_123",
+            "--file",
+            "/tmp/receipt.pdf",
+        ])
+        .expect("tx attach-receipt should parse");
         match cli.command {
             super::Command::Tx(_) => {}
             _ => panic!("expected tx command"),
