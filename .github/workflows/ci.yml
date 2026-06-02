@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    # Mirrors formbro CI. Fallback: change to `runs-on: macos-14` if no
+    # self-hosted Apple-silicon runner is available (macos-14 is GitHub-hosted ARM64).
+    runs-on: [self-hosted, macOS, ARM64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tool versions
+        run: |
+          rustc --version && cargo --version
+
+      - name: Add Rust target
+        run: rustup target add aarch64-apple-darwin
+
+      - name: Skills mirror lock-step (.claude/skills == .agents/skills)
+        run: bash scripts/sync-skills.sh
+
+      - name: Cargo build (release)
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Cargo clippy (deny warnings)
+        run: cargo clippy --release --target aarch64-apple-darwin -- -D warnings
+
+      - name: Cargo test (release)
+        run: cargo test --release --target aarch64-apple-darwin 2>&1 | tee /tmp/cargo-test.log
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-test-log
+          path: /tmp/cargo-test.log

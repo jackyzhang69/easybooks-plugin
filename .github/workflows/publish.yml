@@ -1,0 +1,148 @@
+name: Publish
+
+# Direct publisher (mirrors formbro-plugin): build both supported targets in one
+# macOS runner workspace and upload the GitHub release directly — no
+# actions/upload-artifact two-job handoff (avoids artifact-quota failures).
+#
+# Rust-only CLI: no bun / pdf / webform steps, no lazy runtime assets.
+#
+# darwin-x64 and linux-x64 can be added to the build matrix below once the
+# corresponding cross-toolchains are present on the runner (see .cargo/config.toml).
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  publish:
+    # Fallback: change to `runs-on: macos-14` if no self-hosted ARM64 runner exists.
+    runs-on: [self-hosted, macOS, ARM64]
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ github.ref_name }}
+      STAGE: /tmp/easybooks-publish-stage
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure rustup on PATH
+        run: echo "$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/bin" >> "$GITHUB_PATH"
+
+      - name: Verify cross-compile env
+        run: |
+          set -euo pipefail
+          which x86_64-w64-mingw32-gcc || (echo "::error::mingw-w64 missing on runner (brew install mingw-w64)" && exit 1)
+
+      - name: Add Rust targets
+        run: |
+          rustup target add aarch64-apple-darwin
+          rustup target add x86_64-pc-windows-gnu
+
+      - name: Skills mirror lock-step (.claude/skills == .agents/skills)
+        run: bash scripts/sync-skills.sh
+
+      - name: Build Rust binaries
+        run: |
+          set -euo pipefail
+          cargo build --release --target aarch64-apple-darwin --bin easybooks
+          cargo build --release --target x86_64-pc-windows-gnu --bin easybooks
+
+      - name: Stage binaries into bin/<platform>/
+        run: |
+          set -euo pipefail
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE/bin/darwin-arm64" "$STAGE/bin/win32-x64"
+          cp target/aarch64-apple-darwin/release/easybooks "$STAGE/bin/darwin-arm64/easybooks"
+          cp target/x86_64-pc-windows-gnu/release/easybooks.exe "$STAGE/bin/win32-x64/easybooks.exe"
+          chmod +x "$STAGE/bin/darwin-arm64/easybooks"
+          chmod +x "$STAGE/bin/win32-x64/easybooks.exe" || true
+
+      - name: Codesign macOS binary
+        env:
+          CODESIGN_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${CODESIGN_IDENTITY:-}" ]]; then
+            echo "::warning::APPLE_DEVELOPER_ID_APPLICATION not set; shipping unsigned macOS binary"
+            exit 0
+          fi
+          codesign --force --options runtime --sign "$CODESIGN_IDENTITY" "$STAGE/bin/darwin-arm64/easybooks"
+
+      - name: Notarize macOS binary
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_NOTARIZE_PASS: ${{ secrets.APPLE_NOTARIZE_PASS }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${APPLE_ID:-}" || -z "${APPLE_NOTARIZE_PASS:-}" ]]; then
+            echo "::warning::APPLE_ID/APPLE_NOTARIZE_PASS not set; skipping notarize"
+            exit 0
+          fi
+          ZIP=/tmp/easybooks-notarize.zip
+          (cd "$STAGE/bin/darwin-arm64" && zip "$ZIP" easybooks)
+          xcrun notarytool submit "$ZIP" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_NOTARIZE_PASS" --wait
+
+      - name: Stage skills bundle
+        run: |
+          set -euo pipefail
+          # The published plugin's skills/ is populated from .claude/skills
+          # (kept byte-identical to .agents/skills by scripts/sync-skills.sh).
+          tar czf "$STAGE/skills-bundle-${VERSION}.tar.gz" -C "$GITHUB_WORKSPACE/.claude/skills" .
+
+      - name: Render runtime manifest
+        run: |
+          set -euo pipefail
+          # No lazy assets to checksum (Rust-only). Stamp the release tag and copy
+          # the authored manifest; any TO_BE_FILLED_BY_CI placeholders remain inert.
+          if command -v jq >/dev/null 2>&1; then
+            jq --arg tag "$VERSION" '
+              if .binary.release == null then .binary.release = {} else . end
+              | .binary.release.tag = $tag
+            ' "$GITHUB_WORKSPACE/plugin-metadata/runtime-manifest.json" \
+              > "$STAGE/runtime-manifest.json"
+          else
+            cp "$GITHUB_WORKSPACE/plugin-metadata/runtime-manifest.json" "$STAGE/runtime-manifest.json"
+          fi
+
+      - name: Stage release archives
+        run: |
+          set -euo pipefail
+          cd "$STAGE"
+          tar czf "easybooks-${VERSION}-aarch64-apple-darwin.tar.gz" -C bin/darwin-arm64 easybooks
+          tar czf "easybooks-${VERSION}-x86_64-pc-windows-gnu.tar.gz" -C bin/win32-x64 easybooks.exe
+          shasum -a 256 *.tar.gz runtime-manifest.json > checksums.txt
+
+      - name: Validate staged artifacts
+        run: |
+          set -euo pipefail
+          test -f "$STAGE/bin/darwin-arm64/easybooks"
+          test -f "$STAGE/bin/win32-x64/easybooks.exe"
+          test -f "$STAGE/runtime-manifest.json"
+          test -f "$STAGE/skills-bundle-${VERSION}.tar.gz"
+          test -f "$STAGE/easybooks-${VERSION}-aarch64-apple-darwin.tar.gz"
+          test -f "$STAGE/easybooks-${VERSION}-x86_64-pc-windows-gnu.tar.gz"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd "$STAGE"
+          ASSETS=(
+            "easybooks-${VERSION}-aarch64-apple-darwin.tar.gz"
+            "easybooks-${VERSION}-x86_64-pc-windows-gnu.tar.gz"
+            "skills-bundle-${VERSION}.tar.gz"
+            "runtime-manifest.json"
+            "checksums.txt"
+          )
+          if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$VERSION" "${ASSETS[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$VERSION" "${ASSETS[@]}" \
+              --title "EasyBooks $VERSION" \
+              --notes "EasyBooks CLI plugin release $VERSION (built from ${{ github.sha }})." \
+              --repo "$GITHUB_REPOSITORY"
+          fi

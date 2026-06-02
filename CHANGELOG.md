@@ -1,0 +1,41 @@
+# Changelog
+
+All notable changes to the EasyBooks plugin (`easybooks-cli`) are recorded here.
+
+## 0.1.0 — unreleased
+
+Initial scaffold of the EasyBooks Codex/Claude Code plugin. Records invoices,
+receipts, and Gmail-sourced finance data into EasyBooks through a bundled
+`easybooks` CLI, which is the only boundary for EasyBooks reads and writes.
+
+- **CLI (`cli/`)**: `easybooks` binary scaffold with the v1 command surface —
+  setup/health (`login`, `whoami`, `doctor`), reads (`categories list`,
+  `clients list`/`find`, `invoices list`), transaction recording
+  (`income add`, `expense add`, `tx import-json`), invoices
+  (`invoice create`, `invoice send`), and Gmail (`gmail record`, and
+  `gmail sync` as a v1 stub). JSON-on-stdout output; integration key masked as
+  `eb_***`; config persisted to `~/.easybooks/config.json` (mode `0600`).
+- **Binary resolver**: `$EASYBOOKS_BIN` → `$CLAUDE_PLUGIN_ROOT/bin/<platform>/`
+  → Codex cache → `command -v easybooks`.
+- **Skills** (mirrored byte-identical in `.claude/skills/` and
+  `.agents/skills/`): `connect-easybooks`, `easybooks-capabilities`
+  (read-first router), `easybooks-record`, `easybooks-invoice`,
+  `easybooks-gmail`.
+- **Backend integration (host app `/Users/jacky/eb`, dev artifact)**: new
+  `/api/integrations/*` endpoints (`whoami`, `ingest/transactions`,
+  `ingest/invoice`, `categories`, `clients`, `invoices`) modeled on the existing
+  audit→EasyBooks handler; idempotent on `(user_id, source_system, source_id)`.
+  Invoice idempotency migration `009_invoice_external_sources.sql` added (not
+  auto-applied). New env key names declared:
+  `EASYBOOKS_INTEGRATION_API_KEY`, `EASYBOOKS_INTEGRATION_USER_ID`.
+- **plugin-metadata**: `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`,
+  `runtime-manifest.json`, and a marketplace-facing README.
+- **CI / packaging**: `ci.yml`, `publish.yml`, and `scripts/` for local build,
+  runtime-readiness verification, and skill-mirror sync.
+- **Docs**: build contract (`docs/CONTRACT.md`, the single source of truth) and
+  `docs/architecture.md`.
+- **Governance**: PROD-default backend (`https://easybooks.jackyzhang.app`, the
+  immicore eb-plugin via the eb frontend nginx `/api` proxy; test override
+  `https://easybooks-test.jackyzhang.app`, LAN `http://192.168.1.98:8310`); any
+  production write is approval-gated; secrets declared by name only (no values);
+  backend deploys and migrations are not performed in this build.

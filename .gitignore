@@ -1,0 +1,22 @@
+/target/
+**/*.rs.bk
+node_modules/
+dist/
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Built CLI binaries are produced by CI and staged into bin/<platform>/ at
+# release time; do not commit local dev builds.
+/bin/*/easybooks
+/bin/*/easybooks.exe
+/bin/*/*.sha256
+
+# Local secrets / config — never commit
+.env
+.env.*
+!.env.example
+
+# Claude Code transient runtime state
+.claude/scheduled_tasks.lock
