@@ -137,7 +137,7 @@ Use this whenever the user gives you a file or pastes content: receipt photo, sc
 3. **Assign a stable `source_id` per entry** so re-imports are idempotent (invoice number, statement line hash, Gmail message id, etc.). Never omit it for document imports.
 4. **Dry-run first:** `easybooks tx import-json --json '<json>' --dry-run`. This validates + echoes the resolved rows without writing.
 5. **Show the user the resolved rows** (amount, date, category, classification, type). Get confirmation, especially for amounts and business-vs-personal classification.
-6. **Record for real:** rerun the same command **without** `--dry-run`. Output is `{ "created":n, "existing":n, "skipped":n, "processed":n }` — `existing` > 0 means idempotency already had those rows; that is success, not an error.
+6. **Record for real:** rerun the same command **without** `--dry-run`. Output is `{ "created":n, "existing":n, "skipped":n, "skipped_personal":n, "processed":n }` — `existing` > 0 means idempotency already had those rows; that is success, not an error. `skipped_personal` > 0 means the server **dropped** entries that resolved to personal (see §1 taxonomy / self-learning) — they were intentionally not booked.
 
 Single quick one-off (no file)? Use `easybooks income add` / `easybooks expense add` directly instead of building batch JSON. Full detail: `easybooks-record`.
 
@@ -173,6 +173,8 @@ Three deductibility labels — never just two, and never silently default an unk
 If unsure, ask one specific question; if it stays unknown, mark it **needs-review** (don't guess `business`).
 
 **Self-learning:** correcting a classification with `easybooks tx reclassify <id> --class <label> --learn` teaches the system to remember that **sender** (keyed off `source_payload.from`), so future transactions from the same sender are classified automatically. Correct once → it remembers. Aggregator senders (e.g. `paypal.com`, `stripe.com`) forward many different merchants, so the system does **not** learn on those — classify those per-receipt.
+
+**Pure-personal is NOT recorded (server-side drop):** an entry that resolves to `personal` is **not booked at all** — no transaction row, no receipt upload — and is returned under `skipped_personal` instead of `created`. It resolves to personal when EITHER the entry carries `classification: "personal"`, OR its sender is one the user has already taught is pure-personal (a confident learned rule, via `reclassify --class personal --learn`). So after you teach a sender as personal, future emails from it are auto-dropped, not recorded. Still submit such entries with `source_payload.from` (don't pre-filter in the agent) — the server decides and reports the count. This applies only to `personal`; `mixed` and not-yet-confident senders are still recorded for review.
 
 `tx import-json` / `gmail record` JSON envelope (the user is identified by the API key, so no owner id):
 ```json
