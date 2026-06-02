@@ -2,9 +2,9 @@
 //! and attach a receipt document to it.
 //!
 //!   - `tx reclassify <id> --class <business|mixed|personal> [--learn]`
-//!       → POST /api/integrations/transactions/{id}/reclassify
+//!     → POST /api/integrations/transactions/{id}/reclassify
 //!   - `tx attach-receipt <id> --file <path>`
-//!       → POST /api/integrations/transactions/{id}/receipt
+//!     → POST /api/integrations/transactions/{id}/receipt
 //!
 //! Both go through the bundled `ApiClient` so they carry the user's `eb_live_`
 //! Bearer key exactly like every other write. Identity comes from the key, so
