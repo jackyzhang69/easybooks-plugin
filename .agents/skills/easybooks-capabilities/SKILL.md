@@ -193,6 +193,36 @@ If unsure, ask one specific question; if it stays unknown, mark it **needs-revie
 ```
 Server computes subtotal / tax / total and generates the `INV-` invoice number. Amounts in invoice items are decimals (dollars); transaction Entries use integer `amount_cents`.
 
+## §R. Rules — auto-categorization (QB Bank Rules style)
+
+Rules auto-classify / categorize transactions the way QuickBooks Bank Rules do: a transaction is matched against ordered rules and the first matches set its category and/or classification. Use this surface when the user wants to **automate** categorization ("auto-categorize anything from `<sender>` as `<category>`", "make everything matching X business", "set up a rule", "list / disable my rules", "apply my rules to existing transactions"). For a one-off correction of a single transaction, use `tx reclassify` instead — rules are for the repeating case.
+
+| User intent | Command | Endpoint |
+|---|---|---|
+| "list my rules" | `easybooks rules list` | `GET /api/integrations/rules` |
+| "show rule `<id>`" | `easybooks rules show <rule_id>` | `GET /api/integrations/rules/{id}` |
+| "create a rule" | `easybooks rules create --json '<rule json>'` | `POST /api/integrations/rules` |
+| "delete rule `<id>`" | `easybooks rules delete <rule_id>` | `DELETE /api/integrations/rules/{id}` |
+| "enable / turn on rule `<id>`" | `easybooks rules enable <rule_id>` | `PATCH /api/integrations/rules/{id}` `{enabled:true}` |
+| "disable / pause rule `<id>`" | `easybooks rules disable <rule_id>` | `PATCH /api/integrations/rules/{id}` `{enabled:false}` |
+| "apply / run my rules over transactions" | `easybooks rules apply --scope <all\|unclassified\|selected> [--ids a,b] [--rule-ids r1,r2] [--only-auto-apply] [--commit]` | `POST /api/integrations/rules/apply` |
+
+**Rule shape** (do not invent fields): `name`, `priority` (integer, **lower = evaluated first**), `enabled`, `match_type` (`all` = every condition must hold | `any` = at least one), `apply_to` (`income` | `expense` | `both`), `auto_apply`, `stop_on_match`, `conditions[]`, `actions[]`.
+
+- **condition**: `field` ∈ `description` | `amount` | `type` | `sender_domain`; `operator` ∈ `contains` | `not_contains` | `equals` | `not_equals` | `starts_with` | `ends_with` | `gt` | `gte` | `lt` | `lte`; `value` (string).
+- **action**: `action_type` `set_category` (with `category_id`) **OR** `set_classification` (with `classification` ∈ `business` | `mixed` | `personal`). Resolve `category_id` first via `easybooks categories list` — never invent it.
+
+**`rules apply` defaults to a PREVIEW (dry-run)** — it reports what *would* change without writing. Add `--commit` to actually write. `--scope` is `all` | `unclassified` | `selected` (pair `selected` with `--ids a,b`); `--rule-ids` limits which rules run; `--only-auto-apply` restricts to rules whose `auto_apply` is true. Always show the preview to the user before re-running with `--commit`.
+
+**Keys:** `rules list` / `rules show` need a **read** key; `create` / `delete` / `enable` / `disable` / `apply` need a **read_write** key.
+
+Compact `create --json` example — auto-mark anything from a vendor domain as business:
+```json
+{ "name": "ACME → business", "priority": 100, "enabled": true, "match_type": "all", "apply_to": "expense", "auto_apply": true, "stop_on_match": true,
+  "conditions": [ { "field": "sender_domain", "operator": "contains", "value": "acme.com" } ],
+  "actions": [ { "action_type": "set_classification", "classification": "business" } ] }
+```
+
 ## 3. Skill router by user intent
 
 | User says (any phrasing) | Skill | Entry point |
@@ -211,6 +241,7 @@ Server computes subtotal / tax / total and generates the `INV-` invoice number. 
 | Reads (resolve names → ids) | `categories list [--type income\|expense]`, `clients list`, `clients find --query <q>`, `invoices list [--status <s>]` |
 | Record transactions | `income add ...`, `expense add ...`, `tx import-json --json '<json>' [--dry-run]` |
 | Classify / receipts | `tx reclassify <id> --class business\|mixed\|personal [--learn]`, `tx attach-receipt <id> --file <path>` |
+| Rules (auto-categorization) | `rules list`, `rules show <id>`, `rules create --json '<json>'`, `rules delete <id>`, `rules enable\|disable <id>`, `rules apply --scope <all\|unclassified\|selected> [--ids ..] [--rule-ids ..] [--only-auto-apply] [--commit]` (preview unless `--commit`) — see §R |
 | Invoices | `invoice create --json '<json>' [--dry-run]`, `invoice send <invoice_id>` |
 | Gmail (v1) | `gmail record --json '<json>' [--dry-run]` (alias of `tx import-json`, `source_system` defaults to `gmail`), `gmail sync` (v1 stub) |
 

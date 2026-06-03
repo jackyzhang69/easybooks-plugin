@@ -10,7 +10,7 @@ use easybooks_cli::bootstrap;
 
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use commands::{gmail, invoices, read, setup, transactions, tx_ops};
+use commands::{gmail, invoices, read, rules, setup, transactions, tx_ops};
 
 #[derive(Parser)]
 #[command(name = "easybooks")]
@@ -60,6 +60,8 @@ enum Command {
     Invoice(InvoiceCommand),
     /// Gmail receipt/invoice recording (v1) + sync stub.
     Gmail(GmailCommand),
+    /// Auto-categorization rules (QB Bank Rules inspired).
+    Rules(RulesCommand),
 }
 
 #[derive(Args)]
@@ -317,6 +319,49 @@ enum GmailSub {
     Sync,
 }
 
+#[derive(Args)]
+struct RulesCommand {
+    #[command(subcommand)]
+    command: RulesSub,
+}
+
+#[derive(Subcommand)]
+enum RulesSub {
+    /// GET /api/integrations/rules
+    List,
+    /// GET /api/integrations/rules/{id}
+    Show { rule_id: String },
+    /// POST /api/integrations/rules with the raw `--json` rule payload.
+    Create {
+        #[arg(long)]
+        json: String,
+    },
+    /// DELETE /api/integrations/rules/{id}
+    Delete { rule_id: String },
+    /// PATCH /api/integrations/rules/{id} {enabled:true}
+    Enable { rule_id: String },
+    /// PATCH /api/integrations/rules/{id} {enabled:false}
+    Disable { rule_id: String },
+    /// POST /api/integrations/rules/apply — dry-run preview unless `--commit`.
+    Apply {
+        /// Selection scope: all | unclassified | selected.
+        #[arg(long)]
+        scope: String,
+        /// Comma-separated transaction ids (used with `--scope selected`).
+        #[arg(long)]
+        ids: Option<String>,
+        /// Comma-separated rule ids to limit which rules run.
+        #[arg(long = "rule-ids")]
+        rule_ids: Option<String>,
+        /// Only run rules flagged for auto-apply.
+        #[arg(long = "only-auto-apply", default_value_t = false)]
+        only_auto_apply: bool,
+        /// Persist matches instead of returning a dry-run preview.
+        #[arg(long, default_value_t = false)]
+        commit: bool,
+    },
+}
+
 fn main() {
     if let Err(error) = run() {
         output::print_error(&error);
@@ -392,6 +437,28 @@ fn dispatch(command: Command, base_url_arg: Option<String>) -> Result<()> {
         Command::Gmail(cmd) => match cmd.command {
             GmailSub::Record { json, dry_run } => gmail::record(&client, &json, dry_run),
             GmailSub::Sync => gmail::sync(),
+        },
+        Command::Rules(cmd) => match cmd.command {
+            RulesSub::List => rules::list(&client),
+            RulesSub::Show { rule_id } => rules::show(&client, &rule_id),
+            RulesSub::Create { json } => rules::create(&client, &json),
+            RulesSub::Delete { rule_id } => rules::delete(&client, &rule_id),
+            RulesSub::Enable { rule_id } => rules::enable(&client, &rule_id),
+            RulesSub::Disable { rule_id } => rules::disable(&client, &rule_id),
+            RulesSub::Apply {
+                scope,
+                ids,
+                rule_ids,
+                only_auto_apply,
+                commit,
+            } => rules::apply(
+                &client,
+                &scope,
+                ids.as_deref(),
+                rule_ids.as_deref(),
+                only_auto_apply,
+                commit,
+            ),
         },
     }
 }
@@ -502,6 +569,38 @@ mod tests {
         match cli.command {
             super::Command::Gmail(_) => {}
             _ => panic!("expected gmail command"),
+        }
+    }
+
+    #[test]
+    fn parses_rules_show() {
+        let cli = Cli::try_parse_from(["easybooks", "rules", "show", "rule_123"])
+            .expect("rules show should parse");
+        match cli.command {
+            super::Command::Rules(_) => {}
+            _ => panic!("expected rules command"),
+        }
+    }
+
+    #[test]
+    fn parses_rules_apply() {
+        let cli = Cli::try_parse_from([
+            "easybooks",
+            "rules",
+            "apply",
+            "--scope",
+            "selected",
+            "--ids",
+            "txn_1,txn_2",
+            "--rule-ids",
+            "rule_a,rule_b",
+            "--only-auto-apply",
+            "--commit",
+        ])
+        .expect("rules apply should parse");
+        match cli.command {
+            super::Command::Rules(_) => {}
+            _ => panic!("expected rules command"),
         }
     }
 }

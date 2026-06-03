@@ -49,6 +49,16 @@ impl ApiClient {
         parse_json_response(response)
     }
 
+    pub fn delete(&self, path: &str) -> Result<Value> {
+        let response = self.request("DELETE", path, vec![], None::<&Value>)?;
+        parse_json_response(response)
+    }
+
+    pub fn send_with_body<T: Serialize>(&self, method: &str, path: &str, body: &T) -> Result<Value> {
+        let response = self.request(method, path, vec![], Some(body))?;
+        parse_json_response(response)
+    }
+
     fn request<T: Serialize>(
         &self,
         method: &str,
