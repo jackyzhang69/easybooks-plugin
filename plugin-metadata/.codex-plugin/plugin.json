@@ -1,7 +1,7 @@
 {
   "name": "easybooks-cli",
-  "description": "Bookkeeping for self-employed Canadians via the bundled EasyBooks CLI: drop a receipt, invoice, or scan Gmail and have it recorded into EasyBooks. The CLI is the only boundary for all EasyBooks reads and writes \u2014 record income/expenses, create and send invoices, and resolve clients/categories.",
-  "version": "0.2.0",
+  "description": "Bookkeeping for self-employed Canadians via the bundled EasyBooks CLI: drop a receipt, invoice, or scan Gmail and have it recorded into EasyBooks. The CLI is the only boundary for all EasyBooks reads and writes — record income/expenses, create and send invoices, and resolve clients/categories.",
+  "version": "0.3.0",
   "min_supported_version": "0.1.0",
   "author": {
     "name": "Jacky Zhang"
@@ -20,15 +20,15 @@
   "interface": {
     "displayName": "EasyBooks",
     "shortDescription": "Bookkeeping for self-employed Canadians via the EasyBooks CLI.",
-    "longDescription": "Use the bundled EasyBooks Rust CLI as the only boundary for EasyBooks operations. The agent may parse a dropped receipt, invoice, image, PDF, or email locally to extract structured data, but the moment anything is recorded, listed, or mutated it goes through `easybooks ...` \u2014 never a direct database or backend call. Core value: drop a receipt or invoice (or scan your connected Gmail for receipts and invoices) and have it recorded straight into EasyBooks as income or expenses, idempotently keyed so re-scans never double-record. Also create and send invoices and resolve clients and expense/income categories by name. The CLI talks to the EasyBooks backend integration endpoints over HTTP. The only thing the user ever inputs is their personal EasyBooks API key (eb_live_\u2026, generated in the web app under Settings \u2192 API Keys with a read or read_write scope), captured once by the connect-easybooks skill and stored only in the CLI's own config file.",
+    "longDescription": "Use the bundled EasyBooks Rust CLI as the only boundary for EasyBooks operations. The agent may parse a dropped receipt, invoice, image, PDF, or email locally to extract structured data, but the moment anything is recorded, listed, or mutated it goes through `easybooks ...` — never a direct database or backend call. Core value: drop a receipt or invoice (or scan your connected Gmail for receipts and invoices) and have it recorded straight into EasyBooks as income or expenses, idempotently keyed so re-scans never double-record. Also create and send invoices and resolve clients and expense/income categories by name. The CLI talks to the EasyBooks backend integration endpoints over HTTP. The only thing the user ever inputs is their personal EasyBooks API key (eb_live_…, generated in the web app under Settings → API Keys with a read or read_write scope), captured once by the connect-easybooks skill and stored only in the CLI's own config file.",
     "developerName": "Jacky Zhang",
     "category": "Productivity",
     "capabilities": [
       "Read",
       "Write"
     ],
-    "websiteURL": "https://example.com/easybooks",
-    "privacyPolicyURL": "https://example.com/easybooks/privacy",
+    "websiteURL": "https://easybooks.jackyzhang.app",
+    "privacyPolicyURL": "https://easybooks.jackyzhang.app/privacy",
     "defaultPrompt": [
       "Record this receipt into EasyBooks.",
       "Log a $120 expense for software on 2026-05-01.",
