@@ -10,7 +10,7 @@ use easybooks_cli::bootstrap;
 
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use commands::{gmail, invoices, read, rules, setup, transactions, tx_ops};
+use commands::{clients, dashboard, gmail, invoices, read, rules, setup, transactions, tx_ops, tx_query};
 
 #[derive(Parser)]
 #[command(name = "easybooks")]
@@ -62,6 +62,8 @@ enum Command {
     Gmail(GmailCommand),
     /// Auto-categorization rules (QB Bank Rules inspired).
     Rules(RulesCommand),
+    /// Dashboard stats summary.
+    Dashboard(DashboardCommand),
 }
 
 #[derive(Args)]
@@ -92,6 +94,16 @@ enum CategoriesSub {
         #[arg(long = "type", value_enum)]
         type_filter: Option<TxType>,
     },
+    /// POST /api/integrations/categories — create a new category.
+    Create {
+        #[arg(long)]
+        name: String,
+        #[arg(long = "type", value_enum)]
+        type_: TxType,
+        /// Mark the category as tax-deductible.
+        #[arg(long = "tax-deductible", default_value_t = false)]
+        tax_deductible: bool,
+    },
 }
 
 #[derive(Args)]
@@ -108,6 +120,43 @@ enum ClientsSub {
     Find {
         #[arg(long)]
         query: String,
+    },
+    /// POST /api/integrations/clients — create a new client.
+    Create {
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long)]
+        email: Option<String>,
+        #[arg(long)]
+        phone: Option<String>,
+        #[arg(long)]
+        address: Option<String>,
+        #[arg(long)]
+        notes: Option<String>,
+        /// Post a raw JSON object instead of individual flags.
+        #[arg(long)]
+        json: Option<String>,
+    },
+    /// PATCH /api/integrations/clients/{id} — update a client (only provided fields).
+    Update {
+        client_id: String,
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long)]
+        email: Option<String>,
+        #[arg(long)]
+        phone: Option<String>,
+        #[arg(long)]
+        address: Option<String>,
+        #[arg(long)]
+        notes: Option<String>,
+    },
+    /// DELETE /api/integrations/clients/{id} — delete a client.
+    Delete {
+        client_id: String,
+        /// Required guard: confirm the deletion (non-interactive CLI).
+        #[arg(long, default_value_t = false)]
+        force: bool,
     },
 }
 
@@ -152,6 +201,29 @@ impl Classification {
         match self {
             Classification::Business => "business",
             Classification::Personal => "personal",
+        }
+    }
+}
+
+/// Classification filter for `tx list`. Wider than the add-time `Classification`
+/// (income/expense add only set business|personal): listing can also filter by
+/// `mixed` and `unclassified` (the latter maps to `classification IS NULL`
+/// server-side), which is the core "show me what still needs classifying" query.
+#[derive(Clone, ValueEnum)]
+enum TxListClass {
+    Business,
+    Mixed,
+    Personal,
+    Unclassified,
+}
+
+impl TxListClass {
+    fn as_str(&self) -> &'static str {
+        match self {
+            TxListClass::Business => "business",
+            TxListClass::Mixed => "mixed",
+            TxListClass::Personal => "personal",
+            TxListClass::Unclassified => "unclassified",
         }
     }
 }
@@ -275,6 +347,51 @@ enum TxSub {
         #[arg(long)]
         file: String,
     },
+    /// GET /api/integrations/transactions — list transactions with optional filters.
+    List {
+        #[arg(long = "type", value_enum)]
+        type_filter: Option<TxType>,
+        #[arg(long, value_enum)]
+        classification: Option<TxListClass>,
+        #[arg(long)]
+        review: Option<String>,
+        #[arg(long)]
+        from: Option<String>,
+        #[arg(long)]
+        to: Option<String>,
+        /// Full-text search query (sent as `q`).
+        #[arg(long)]
+        query: Option<String>,
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+    /// GET /api/integrations/transactions/{id}/receipt-url
+    ReceiptUrl {
+        transaction_id: String,
+        /// Signed-URL expiry in seconds.
+        #[arg(long)]
+        expires: Option<u32>,
+    },
+    /// POST /api/integrations/transactions/{id}/confirm
+    Confirm { transaction_id: String },
+    /// PATCH /api/integrations/transactions/{id} — update fields (only provided).
+    Update {
+        transaction_id: String,
+        #[arg(long)]
+        amount: Option<String>,
+        #[arg(long)]
+        date: Option<String>,
+        #[arg(long)]
+        description: Option<String>,
+        /// Category name (maps to `category_name` in the request body).
+        #[arg(long)]
+        category: Option<String>,
+        #[arg(long)]
+        notes: Option<String>,
+        /// Print the PATCH body without calling the backend.
+        #[arg(long = "dry-run", default_value_t = false)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Args)]
@@ -296,6 +413,26 @@ enum InvoiceSub {
     Send {
         /// The invoice id.
         invoice_id: String,
+    },
+    /// GET /api/integrations/invoices/{id} — fetch a single invoice.
+    Get { invoice_id: String },
+    /// POST /api/integrations/invoice/{id}/status — mark paid or unpaid.
+    Mark {
+        invoice_id: String,
+        #[arg(long)]
+        status: String,
+    },
+    /// GET /api/integrations/invoice/{id}/pdf — download and save the PDF.
+    Pdf {
+        invoice_id: String,
+        /// Output file path (default: ./<filename from response>).
+        #[arg(long)]
+        out: Option<String>,
+    },
+    /// GET /api/integrations/invoices/stats — invoice aggregate stats.
+    Stats {
+        #[arg(long)]
+        year: Option<u32>,
     },
 }
 
@@ -323,6 +460,13 @@ enum GmailSub {
 struct RulesCommand {
     #[command(subcommand)]
     command: RulesSub,
+}
+
+#[derive(Args)]
+struct DashboardCommand {
+    /// Filter stats to a specific year (YYYY).
+    #[arg(long)]
+    year: Option<u32>,
 }
 
 #[derive(Subcommand)]
@@ -402,10 +546,50 @@ fn dispatch(command: Command, base_url_arg: Option<String>) -> Result<()> {
             CategoriesSub::List { type_filter } => {
                 read::categories_list(&client, type_filter.map(|t| t.as_str().to_string()))
             }
+            CategoriesSub::Create {
+                name,
+                type_,
+                tax_deductible,
+            } => read::categories_create(&client, &name, type_.as_str(), tax_deductible),
         },
         Command::Clients(cmd) => match cmd.command {
             ClientsSub::List => read::clients_list(&client),
             ClientsSub::Find { query } => read::clients_find(&client, query),
+            ClientsSub::Create {
+                name,
+                email,
+                phone,
+                address,
+                notes,
+                json,
+            } => clients::create(
+                &client,
+                name.as_deref(),
+                email.as_deref(),
+                phone.as_deref(),
+                address.as_deref(),
+                notes.as_deref(),
+                json.as_deref(),
+            ),
+            ClientsSub::Update {
+                client_id,
+                name,
+                email,
+                phone,
+                address,
+                notes,
+            } => clients::update(
+                &client,
+                &client_id,
+                name.as_deref(),
+                email.as_deref(),
+                phone.as_deref(),
+                address.as_deref(),
+                notes.as_deref(),
+            ),
+            ClientsSub::Delete { client_id, force } => {
+                clients::delete(&client, &client_id, force)
+            }
         },
         Command::Invoices(cmd) => match cmd.command {
             InvoicesSub::List { status } => read::invoices_list(&client, status),
@@ -429,10 +613,55 @@ fn dispatch(command: Command, base_url_arg: Option<String>) -> Result<()> {
                 transaction_id,
                 file,
             } => tx_ops::attach_receipt(&client, &transaction_id, &file),
+            TxSub::List {
+                type_filter,
+                classification,
+                review,
+                from,
+                to,
+                query,
+                limit,
+            } => tx_query::list(
+                &client,
+                type_filter.map(|t| t.as_str()).as_deref(),
+                classification.map(|c| c.as_str()).as_deref(),
+                review.as_deref(),
+                from.as_deref(),
+                to.as_deref(),
+                query.as_deref(),
+                limit,
+            ),
+            TxSub::ReceiptUrl {
+                transaction_id,
+                expires,
+            } => tx_query::receipt_url(&client, &transaction_id, expires),
+            TxSub::Confirm { transaction_id } => tx_query::confirm(&client, &transaction_id),
+            TxSub::Update {
+                transaction_id,
+                amount,
+                date,
+                description,
+                category,
+                notes,
+                dry_run,
+            } => tx_query::update(
+                &client,
+                &transaction_id,
+                amount.as_deref(),
+                date.as_deref(),
+                description.as_deref(),
+                category.as_deref(),
+                notes.as_deref(),
+                dry_run,
+            ),
         },
         Command::Invoice(cmd) => match cmd.command {
             InvoiceSub::Create { json, dry_run } => invoices::create(&client, &json, dry_run),
             InvoiceSub::Send { invoice_id } => invoices::send(&client, &invoice_id),
+            InvoiceSub::Get { invoice_id } => invoices::get(&client, &invoice_id),
+            InvoiceSub::Mark { invoice_id, status } => invoices::mark(&client, &invoice_id, &status),
+            InvoiceSub::Pdf { invoice_id, out } => invoices::pdf(&client, &invoice_id, out.as_deref()),
+            InvoiceSub::Stats { year } => invoices::stats(&client, year),
         },
         Command::Gmail(cmd) => match cmd.command {
             GmailSub::Record { json, dry_run } => gmail::record(&client, &json, dry_run),
@@ -460,6 +689,7 @@ fn dispatch(command: Command, base_url_arg: Option<String>) -> Result<()> {
                 commit,
             ),
         },
+        Command::Dashboard(cmd) => dashboard::stats(&client, cmd.year),
     }
 }
 
@@ -601,6 +831,257 @@ mod tests {
         match cli.command {
             super::Command::Rules(_) => {}
             _ => panic!("expected rules command"),
+        }
+    }
+
+    #[test]
+    fn parses_tx_list_with_filters() {
+        let cli = Cli::try_parse_from([
+            "easybooks",
+            "tx",
+            "list",
+            "--type",
+            "expense",
+            "--classification",
+            "business",
+            "--from",
+            "2026-01-01",
+            "--to",
+            "2026-06-30",
+            "--query",
+            "coffee",
+            "--limit",
+            "50",
+        ])
+        .expect("tx list with filters should parse");
+        match cli.command {
+            super::Command::Tx(cmd) => match cmd.command {
+                super::TxSub::List {
+                    limit, query, ..
+                } => {
+                    assert_eq!(limit, Some(50));
+                    assert_eq!(query.as_deref(), Some("coffee"));
+                }
+                _ => panic!("expected tx list"),
+            },
+            _ => panic!("expected tx command"),
+        }
+    }
+
+    #[test]
+    fn parses_tx_list_no_filters() {
+        let cli = Cli::try_parse_from(["easybooks", "tx", "list"])
+            .expect("tx list without filters should parse");
+        match cli.command {
+            super::Command::Tx(cmd) => match cmd.command {
+                super::TxSub::List { limit, query, .. } => {
+                    assert!(limit.is_none());
+                    assert!(query.is_none());
+                }
+                _ => panic!("expected tx list"),
+            },
+            _ => panic!("expected tx command"),
+        }
+    }
+
+    #[test]
+    fn parses_tx_update_dry_run() {
+        let cli = Cli::try_parse_from([
+            "easybooks",
+            "tx",
+            "update",
+            "txn_abc",
+            "--amount",
+            "99.99",
+            "--category",
+            "Office Supplies",
+            "--dry-run",
+        ])
+        .expect("tx update --dry-run should parse");
+        match cli.command {
+            super::Command::Tx(cmd) => match cmd.command {
+                super::TxSub::Update {
+                    transaction_id,
+                    dry_run,
+                    category,
+                    ..
+                } => {
+                    assert_eq!(transaction_id, "txn_abc");
+                    assert!(dry_run);
+                    assert_eq!(category.as_deref(), Some("Office Supplies"));
+                }
+                _ => panic!("expected tx update"),
+            },
+            _ => panic!("expected tx command"),
+        }
+    }
+
+    #[test]
+    fn parses_invoice_mark() {
+        let cli = Cli::try_parse_from([
+            "easybooks",
+            "invoice",
+            "mark",
+            "inv_123",
+            "--status",
+            "paid",
+        ])
+        .expect("invoice mark should parse");
+        match cli.command {
+            super::Command::Invoice(cmd) => match cmd.command {
+                super::InvoiceSub::Mark {
+                    invoice_id,
+                    status,
+                } => {
+                    assert_eq!(invoice_id, "inv_123");
+                    assert_eq!(status, "paid");
+                }
+                _ => panic!("expected invoice mark"),
+            },
+            _ => panic!("expected invoice command"),
+        }
+    }
+
+    #[test]
+    fn parses_invoice_pdf_with_out() {
+        let cli = Cli::try_parse_from([
+            "easybooks",
+            "invoice",
+            "pdf",
+            "inv_456",
+            "--out",
+            "/tmp/invoice.pdf",
+        ])
+        .expect("invoice pdf --out should parse");
+        match cli.command {
+            super::Command::Invoice(cmd) => match cmd.command {
+                super::InvoiceSub::Pdf { invoice_id, out } => {
+                    assert_eq!(invoice_id, "inv_456");
+                    assert_eq!(out.as_deref(), Some("/tmp/invoice.pdf"));
+                }
+                _ => panic!("expected invoice pdf"),
+            },
+            _ => panic!("expected invoice command"),
+        }
+    }
+
+    #[test]
+    fn parses_clients_create_with_flags() {
+        let cli = Cli::try_parse_from([
+            "easybooks",
+            "clients",
+            "create",
+            "--name",
+            "Acme Corp",
+            "--email",
+            "billing@acme.com",
+        ])
+        .expect("clients create should parse");
+        match cli.command {
+            super::Command::Clients(cmd) => match cmd.command {
+                super::ClientsSub::Create { name, email, .. } => {
+                    assert_eq!(name.as_deref(), Some("Acme Corp"));
+                    assert_eq!(email.as_deref(), Some("billing@acme.com"));
+                }
+                _ => panic!("expected clients create"),
+            },
+            _ => panic!("expected clients command"),
+        }
+    }
+
+    #[test]
+    fn parses_clients_create_with_json() {
+        let cli = Cli::try_parse_from([
+            "easybooks",
+            "clients",
+            "create",
+            "--json",
+            r#"{"name":"Test"}"#,
+        ])
+        .expect("clients create --json should parse");
+        match cli.command {
+            super::Command::Clients(cmd) => match cmd.command {
+                super::ClientsSub::Create { json, .. } => {
+                    assert!(json.is_some());
+                }
+                _ => panic!("expected clients create"),
+            },
+            _ => panic!("expected clients command"),
+        }
+    }
+
+    #[test]
+    fn parses_clients_delete_force() {
+        let cli = Cli::try_parse_from([
+            "easybooks",
+            "clients",
+            "delete",
+            "client_789",
+            "--force",
+        ])
+        .expect("clients delete --force should parse");
+        match cli.command {
+            super::Command::Clients(cmd) => match cmd.command {
+                super::ClientsSub::Delete { client_id, force } => {
+                    assert_eq!(client_id, "client_789");
+                    assert!(force);
+                }
+                _ => panic!("expected clients delete"),
+            },
+            _ => panic!("expected clients command"),
+        }
+    }
+
+    #[test]
+    fn parses_categories_create() {
+        let cli = Cli::try_parse_from([
+            "easybooks",
+            "categories",
+            "create",
+            "--name",
+            "Office Supplies",
+            "--type",
+            "expense",
+            "--tax-deductible",
+        ])
+        .expect("categories create should parse");
+        match cli.command {
+            super::Command::Categories(cmd) => match cmd.command {
+                super::CategoriesSub::Create {
+                    name,
+                    tax_deductible,
+                    ..
+                } => {
+                    assert_eq!(name, "Office Supplies");
+                    assert!(tax_deductible);
+                }
+                _ => panic!("expected categories create"),
+            },
+            _ => panic!("expected categories command"),
+        }
+    }
+
+    #[test]
+    fn parses_dashboard_with_year() {
+        let cli = Cli::try_parse_from(["easybooks", "dashboard", "--year", "2026"])
+            .expect("dashboard --year should parse");
+        match cli.command {
+            super::Command::Dashboard(cmd) => {
+                assert_eq!(cmd.year, Some(2026));
+            }
+            _ => panic!("expected dashboard command"),
+        }
+    }
+
+    #[test]
+    fn parses_dashboard_no_year() {
+        let cli = Cli::try_parse_from(["easybooks", "dashboard"])
+            .expect("dashboard without year should parse");
+        match cli.command {
+            super::Command::Dashboard(cmd) => {
+                assert!(cmd.year.is_none());
+            }
+            _ => panic!("expected dashboard command"),
         }
     }
 }

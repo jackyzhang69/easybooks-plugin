@@ -1,10 +1,16 @@
 //! Invoice commands (contract §2 "Invoices").
 //!   - `invoice create --json '<json>' [--dry-run]` → POST /api/integrations/ingest/invoice
 //!   - `invoice send <invoice_id>`                  → POST /api/integrations/invoice/:id/send
+//!   - `invoice get <id>`                           → GET  /api/integrations/invoices/{id}
+//!   - `invoice mark <id> --status <paid|unpaid>`   → POST /api/integrations/invoice/{id}/status
+//!   - `invoice pdf <id> [--out <path>]`            → GET  /api/integrations/invoice/{id}/pdf
+//!   - `invoice stats [--year <YYYY>]`              → GET  /api/integrations/invoices/stats
 
 use crate::client::ApiClient;
 use crate::output;
 use anyhow::{anyhow, Context, Result};
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine as _;
 use serde_json::{json, Map, Value};
 
 /// `easybooks invoice create --json '<json>' [--dry-run]`
@@ -63,6 +69,115 @@ pub fn send(client: &ApiClient, invoice_id: &str) -> Result<()> {
     output::print_json(&resp)
 }
 
+/// `easybooks invoice get <id>`
+/// → GET /api/integrations/invoices/{id}
+pub fn get(client: &ApiClient, invoice_id: &str) -> Result<()> {
+    if invoice_id.trim().is_empty() {
+        return Err(anyhow!("invoice_id is required"));
+    }
+    let path = format!("/api/integrations/invoices/{}", encode_segment(invoice_id));
+    output::print_json(&client.get(&path, vec![])?)
+}
+
+/// `easybooks invoice mark <id> --status <paid|unpaid>`
+/// → POST /api/integrations/invoice/{id}/status  body {"status": ...}
+pub fn mark(client: &ApiClient, invoice_id: &str, status: &str) -> Result<()> {
+    if invoice_id.trim().is_empty() {
+        return Err(anyhow!("invoice_id is required"));
+    }
+    validate_invoice_status(status)?;
+    let path = format!(
+        "/api/integrations/invoice/{}/status",
+        encode_segment(invoice_id)
+    );
+    let body = json!({ "status": status });
+    output::print_json(&client.post(&path, &body)?)
+}
+
+/// `easybooks invoice pdf <id> [--out <path>]`
+/// → GET /api/integrations/invoice/{id}/pdf
+///
+/// Decodes `response.content_base64` from the JSON response and writes the bytes
+/// to `--out` (defaults to `./<filename>` from the response). Prints
+/// `{"saved": "<path>"}` on success.
+pub fn pdf(client: &ApiClient, invoice_id: &str, out: Option<&str>) -> Result<()> {
+    if invoice_id.trim().is_empty() {
+        return Err(anyhow!("invoice_id is required"));
+    }
+    let path = format!(
+        "/api/integrations/invoice/{}/pdf",
+        encode_segment(invoice_id)
+    );
+    let resp = client.get(&path, vec![])?;
+
+    // Extract the base64-encoded PDF content from the response.
+    let content_b64 = resp
+        .get("content_base64")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!("response missing `content_base64` field"))?;
+
+    let bytes = BASE64
+        .decode(content_b64)
+        .context("failed to decode content_base64 from response")?;
+
+    // Determine the output path: --out flag, else filename from response, else default.
+    let save_path = if let Some(p) = out {
+        p.to_string()
+    } else {
+        let filename = resp
+            .get("filename")
+            .and_then(|v| v.as_str())
+            .unwrap_or("invoice.pdf");
+        format!("./{}", filename)
+    };
+
+    std::fs::write(&save_path, &bytes)
+        .with_context(|| format!("failed to write PDF to {:?}", save_path))?;
+
+    output::print_json(&json!({ "saved": save_path }))
+}
+
+/// `easybooks invoice stats [--year <YYYY>]`
+/// → GET /api/integrations/invoices/stats
+pub fn stats(client: &ApiClient, year: Option<u32>) -> Result<()> {
+    let mut q: Vec<(&str, String)> = vec![];
+    if let Some(y) = year {
+        q.push(("year", y.to_string()));
+    }
+    output::print_json(&client.get("/api/integrations/invoices/stats", q)?)
+}
+
+fn validate_invoice_status(status: &str) -> Result<()> {
+    match status {
+        "paid" | "unpaid" => Ok(()),
+        _ => Err(anyhow!(
+            "--status must be paid|unpaid (got {:?})",
+            status
+        )),
+    }
+}
+
 fn encode_segment(value: &str) -> String {
     value.replace('/', "%2F").replace(' ', "%20")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invoice_status_validation() {
+        assert!(validate_invoice_status("paid").is_ok());
+        assert!(validate_invoice_status("unpaid").is_ok());
+        assert!(validate_invoice_status("Paid").is_err());
+        assert!(validate_invoice_status("pending").is_err());
+        assert!(validate_invoice_status("").is_err());
+    }
+
+    #[test]
+    fn encode_segment_handles_specials() {
+        assert_eq!(encode_segment("inv_123"), "inv_123");
+        assert_eq!(encode_segment("a/b"), "a%2Fb");
+        assert_eq!(encode_segment("a b"), "a%20b");
+    }
 }

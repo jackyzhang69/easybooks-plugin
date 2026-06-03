@@ -37,8 +37,18 @@ User said this → call this exact command (binary resolution: §B; file-drop de
 | "**create an invoice** for `<client>` for `<items>`" | resolve client → build invoice JSON (§2) → `easybooks invoice create --json '<json>' --dry-run` → confirm → rerun | easybooks-invoice |
 | "**send** invoice `<id>` / email the invoice/receipt" | `easybooks invoice send <invoice_id>` (CONFIRM first — it emails the client) | easybooks-invoice |
 | "**scan my Gmail** for receipts / invoices and record them" | read candidates via Gmail MCP → extract to Entry JSON with `source_id` = Gmail message id → `easybooks gmail record --json '<json>' --dry-run` → confirm → rerun | easybooks-gmail |
+| "**find / search** a transaction by type / category / date / amount / text" | `easybooks tx list [--type income\|expense] [--classification business\|mixed\|personal\|unclassified] [--review needs_review\|reviewed] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--query <q>] [--limit n]` | easybooks-record |
+| "**confirm** a transaction (clear needs-review without changing classification)" | `easybooks tx confirm <id>` | easybooks-record |
+| "**edit** a transaction (amount / date / description / category / notes)" | `easybooks tx update <id> [--amount <d>] [--date YYYY-MM-DD] [--description "<t>"] [--category <name>] [--notes "<t>"] [--dry-run]` | easybooks-record |
+| "view receipt **URL** for a transaction" | `easybooks tx receipt-url <id>` (returns signed URL) | easybooks-record |
+| "**dashboard** summary (income / expenses / net / outstanding / tax estimate)" | `easybooks dashboard [--year <YYYY>]` | easybooks-record |
 | "list my **categories**" | `easybooks categories list [--type income\|expense]` | easybooks-record |
-| "list / find my **clients**" | `easybooks clients list` or `easybooks clients find --query "<q>"` | easybooks-invoice |
+| "**manage categories** (create / view)" | `easybooks categories create --name <n> --type income\|expense [--tax-deductible]` | easybooks-record |
+| "**manage clients** (list / create / update / delete)" | `easybooks clients list`, `easybooks clients create --name <n> [--email --phone --address --notes]`, `easybooks clients update <id> ...`, `easybooks clients delete <id>` | easybooks-invoice |
+| "get **invoice details**" | `easybooks invoice get <id>` | easybooks-invoice |
+| "**mark invoice** paid / unpaid" | `easybooks invoice mark <id> --status paid\|unpaid` | easybooks-invoice |
+| "**download invoice** PDF" | `easybooks invoice pdf <id> [--out <path>]` | easybooks-invoice |
+| "**invoice stats** (counts / amounts by status)" | `easybooks invoice stats [--year <YYYY>]` | easybooks-invoice |
 | "list my **invoices** [that are unpaid/draft]" | `easybooks invoices list [--status <s>]` | easybooks-invoice |
 | "is EasyBooks **healthy** / which backend am I on / token still valid" | `easybooks doctor --json` (local config + backend round-trip + version) | this file |
 | "**connect** EasyBooks / save my API key / set it up" | `connect-easybooks` skill → `easybooks login --token eb_*** --base-url <url>` | connect-easybooks |
@@ -238,11 +248,14 @@ Compact `create --json` example — auto-mark anything from a vendor domain as b
 | Responsibility | Commands |
 |---|---|
 | Connect / health | `login`, `whoami`, `doctor` |
-| Reads (resolve names → ids) | `categories list [--type income\|expense]`, `clients list`, `clients find --query <q>`, `invoices list [--status <s>]` |
+| List / search transactions | `tx list [--type income\|expense] [--classification business\|mixed\|personal\|unclassified] [--review needs_review\|reviewed] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--query <q>] [--limit n]`, `tx receipt-url <id>`, `tx confirm <id>` |
 | Record transactions | `income add ...`, `expense add ...`, `tx import-json --json '<json>' [--dry-run]` |
-| Classify / receipts | `tx reclassify <id> --class business\|mixed\|personal [--learn]`, `tx attach-receipt <id> --file <path>` |
+| Edit / classify transactions | `tx update <id> [--amount|--date|--description|--category|--notes] [--dry-run]`, `tx reclassify <id> --class business\|mixed\|personal [--learn]`, `tx attach-receipt <id> --file <path>` |
+| Dashboard / summaries | `dashboard [--year YYYY]` |
+| Categories | `categories list [--type income\|expense]`, `categories create --name <n> --type income\|expense [--tax-deductible]` |
+| Clients | `clients list`, `clients create --name <n> [--email|--phone|--address|--notes]`, `clients update <id> ...`, `clients delete <id>` |
+| Invoices | `invoice get <id>`, `invoice create --json '<json>' [--dry-run]`, `invoice send <invoice_id>`, `invoice mark <id> --status paid\|unpaid`, `invoice pdf <id> [--out <path>]`, `invoice stats [--year YYYY]`, `invoices list [--status <s>]` |
 | Rules (auto-categorization) | `rules list`, `rules show <id>`, `rules create --json '<json>'`, `rules delete <id>`, `rules enable\|disable <id>`, `rules apply --scope <all\|unclassified\|selected> [--ids ..] [--rule-ids ..] [--only-auto-apply] [--commit]` (preview unless `--commit`) — see §R |
-| Invoices | `invoice create --json '<json>' [--dry-run]`, `invoice send <invoice_id>` |
 | Gmail (v1) | `gmail record --json '<json>' [--dry-run]` (alias of `tx import-json`, `source_system` defaults to `gmail`), `gmail sync` (v1 stub) |
 
 Treat `<easybooks> --help` as runtime truth when docs and code drift.
