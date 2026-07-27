@@ -12,17 +12,15 @@ jobs:
     # runner being online. The tag release remains pinned to the dedicated 69
     # signing runner.
     runs-on: ubuntu-24.04
+    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: gcc
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_AR: ar
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Tool versions
         run: |
           rustc --version && cargo --version
-
-      - name: Install configured Linux linker
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes gcc-x86-64-linux-gnu binutils-x86-64-linux-gnu
 
       - name: Skills mirror lock-step (.claude/skills == .agents/skills)
         run: bash scripts/sync-skills.sh
