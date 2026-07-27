@@ -235,6 +235,30 @@ fn gmail_sync_is_v1_stub() {
 }
 
 #[test]
+fn top_level_json_flag_precedes_command_contract_matrix() {
+    let home = tempfile::tempdir().expect("tempdir");
+    easybooks()
+        .env("HOME", home.path())
+        .args(["--json", "doctor", "--no-fetch"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""binary_version""#));
+
+    for command in ["login", "whoami"] {
+        easybooks()
+            .args(["--json", command, "--help"])
+            .assert()
+            .success();
+    }
+
+    easybooks()
+        .args(["doctor", "--json", "--no-fetch"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unexpected argument '--json'"));
+}
+
+#[test]
 fn login_writes_config_and_masks_key() {
     let home = tempfile::tempdir().expect("tempdir");
     easybooks()

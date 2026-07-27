@@ -50,9 +50,9 @@ User said this → call this exact command (binary resolution: §B; file-drop de
 | "**download invoice** PDF" | `easybooks invoice pdf <id> [--out <path>]` | easybooks-invoice |
 | "**invoice stats** (counts / amounts by status)" | `easybooks invoice stats [--year <YYYY>]` | easybooks-invoice |
 | "list my **invoices** [that are unpaid/draft]" | `easybooks invoices list [--status <s>]` | easybooks-invoice |
-| "is EasyBooks **healthy** / which backend am I on / token still valid" | `easybooks doctor --json` (local config + backend round-trip + version) | this file |
+| "is EasyBooks **healthy** / which backend am I on / token still valid" | `easybooks --json doctor` (local config + backend round-trip + version) | this file |
 | "**connect** EasyBooks / save my API key / set it up" | `connect-easybooks` skill → user-local hidden entry via `easybooks login --token-stdin [--base-url <url>]` | connect-easybooks |
-| "EasyBooks **out of date**?" | `easybooks doctor --json --no-fetch --check-upgrade` | connect-easybooks |
+| "EasyBooks **out of date**?" | `easybooks --json doctor --no-fetch --check-upgrade` | connect-easybooks |
 
 Routing detail below is supplementary — start with this table.
 
@@ -239,7 +239,7 @@ Compact `create --json` example — auto-mark anything from a vendor domain as b
 | "log an expense / income", "record this receipt / file / image / PDF / statement", "fix a classification", "attach a receipt" | **easybooks-record** | `expense add` / `income add` / `tx import-json` / `tx reclassify` / `tx attach-receipt` |
 | "create an invoice", "send invoice X", "list my clients / invoices" | **easybooks-invoice** | `invoice create` / `invoice send` / `clients` / `invoices list` |
 | "scan my Gmail for receipts / invoices and record them" | **easybooks-gmail** | Gmail MCP read → `gmail record` |
-| "is my plugin healthy / which backend am I on" | this file | `easybooks doctor --json` |
+| "is my plugin healthy / which backend am I on" | this file | `easybooks --json doctor` |
 
 ## 4. Complete CLI surface by responsibility
 

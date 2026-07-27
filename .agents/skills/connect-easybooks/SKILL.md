@@ -38,7 +38,7 @@ Two pieces are captured:
 3. **Plugin cache freshness self-check (mandatory):**
 
    ```sh
-   "$EASYBOOKS_BIN" doctor --json --no-fetch --check-upgrade
+   "$EASYBOOKS_BIN" --json doctor --no-fetch --check-upgrade
    ```
 
    - `--no-fetch` is **required** — it skips any bootstrap/network IO and guarantees a pure local cache read.
@@ -113,7 +113,7 @@ Tell the user:
 > - "record this receipt / log a $120 software expense on 2026-05-01" — parse → record
 > - "create an invoice for `<client>` for `<items>`" — staged with a dry-run first
 > - "scan my Gmail for receipts and record them" — read via Gmail, record idempotently
-> - "is EasyBooks healthy / which backend am I on" — runs `easybooks doctor --json`
+> - "is EasyBooks healthy / which backend am I on" — runs `easybooks --json doctor`
 
 Then (silently, no narration) load `easybooks-capabilities/SKILL.md`. It tells you:
 - Which skill to call for any user intent (the top-20-line router)

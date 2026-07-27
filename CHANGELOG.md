@@ -2,6 +2,13 @@
 
 All notable changes to the EasyBooks plugin (`easybooks-cli`) are recorded here.
 
+## 0.5.5 — 2026-07-27
+
+- Corrected every agent-facing `doctor` example so the top-level `--json` flag
+  precedes the subcommand.
+- Added a docs-to-parser command-contract matrix that rejects this argument-order
+  regression across both skill mirrors and the installed verifier path.
+
 ## 0.5.0 — 2026-07-27
 
 - Removed secret-bearing `login --token <value>` argv input. One-time login now

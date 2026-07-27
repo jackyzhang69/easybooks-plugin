@@ -23,7 +23,9 @@ jobs:
           rustc --version && cargo --version
 
       - name: Skills mirror lock-step (.claude/skills == .agents/skills)
-        run: bash scripts/sync-skills.sh
+        run: |
+          bash scripts/sync-skills.sh
+          python3 scripts/assert_skill_command_contract.py
 
       - name: Version metadata lock-step
         run: |
