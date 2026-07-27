@@ -28,7 +28,7 @@ Drop a receipt or an invoice — or ask the agent to scan your connected Gmail f
 
 A personal EasyBooks **API key** (`eb_live_…`, shown masked as `eb_***`), generated in the EasyBooks web app under **Settings → API Keys** with a `read` or `read_write` scope. The key both authenticates and identifies the user — there is no owner id to provide.
 
-The `connect-easybooks` skill runs `easybooks login --token <eb_live_…> --base-url <url>`, which writes `~/.easybooks/config.json` (mode `0600`; `%USERPROFILE%\.easybooks\config.json` on Windows). Every other skill reads from that config — the key is never asked for again, never echoed, and never stored anywhere except that single file.
+The user runs `easybooks login --token-stdin [--base-url <url>]` locally and enters the key at a hidden prompt. The CLI writes `~/.easybooks/config.json` (mode `0600`; `%USERPROFILE%\.easybooks\config.json` on Windows). Every other skill reads from that config — the key never enters argv, chat, shell history, or agent tool input; it is never asked for again, never echoed, and never stored anywhere except that single file.
 
 ## Key safety (enforced by skill text)
 
@@ -38,7 +38,7 @@ The `connect-easybooks` skill runs `easybooks login --token <eb_live_…> --base
 
 ## Dev vs production
 
-The CLI defaults to the **PROD** backend (`https://easybooks.jackyzhang.app`) — the immicore Go eb-plugin reached via the eb frontend domain's nginx `/api` proxy. The legacy Node backend on `http://localhost:8080` is no longer the default. Override with `--base-url` / `$EASYBOOKS_API_URL` for **test** (`https://easybooks-test.jackyzhang.app`) or a **LAN** dev backend (e.g. `http://192.168.1.98:8310`). Because the default is production, any write is gated and requires an approval artifact; the skills warn before any production write.
+The CLI defaults to the **PROD** backend (`https://easybooks.jackyzhang.app`) — the immicore Go eb-plugin reached via the eb frontend domain's nginx `/api` proxy. The legacy Node backend on `http://localhost:8080` is no longer the default. Override with `--base-url` / `$EASYBOOKS_API_URL` for **test** (`https://easybooks-test.jackyzhang.app`) or a **LAN** dev backend (e.g. `http://192.168.1.69:8310`). Because the default is production, mutations require the current-session authorization named by the platform-vault project card.
 
 ## Per-platform binary selection
 
@@ -47,8 +47,6 @@ The CLI defaults to the **PROD** backend (`https://easybooks.jackyzhang.app`) �
 | Platform key | Binary path |
 |---|---|
 | `darwin-arm64` | `bin/darwin-arm64/easybooks` |
-| `darwin-x64` | `bin/darwin-x64/easybooks` |
-| `linux-x64` | `bin/linux-x64/easybooks` |
 | `win32-x64` | `bin/win32-x64/easybooks.exe` |
 
 Each skill resolves the binary in this order — first existing executable wins:
@@ -58,7 +56,7 @@ Each skill resolves the binary in this order — first existing executable wins:
 3. Codex cache: `$HOME/.codex/plugins/cache/jacky-plugins/easybooks-cli/<highest-version>/bin/<platform>/easybooks`
 4. `command -v easybooks` (manual PATH install)
 
-`<platform>` ∈ `darwin-arm64`, `darwin-x64`, `linux-x64`, `win32-x64` (binary `easybooks.exe` on `win32-x64`).
+The public bundle currently supports `darwin-arm64` and `win32-x64`. Other hosts require an explicit trusted binary override or PATH installation.
 
 ## Install
 

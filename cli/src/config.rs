@@ -1,13 +1,13 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{env, fs, path::PathBuf};
+use std::{env, fs, io::Write, path::PathBuf};
 
 /// Default backend: the PROD immicore-served eb-plugin, reached via the eb
 /// frontend domain's nginx `/api` proxy (`https://easybooks.jackyzhang.app`
-/// -> /api/ -> immicore Go eb-plugin). A fresh `easybooks login --token <key>`
+/// -> /api/ -> immicore Go eb-plugin). A fresh `easybooks login --token-stdin`
 /// with no `--base-url` therefore targets production. Overrides still apply via
 /// `--base-url` or `$EASYBOOKS_API_URL` (e.g. test
-/// `https://easybooks-test.jackyzhang.app`, or LAN `http://192.168.1.98:8310`).
+/// `https://easybooks-test.jackyzhang.app`, or LAN `http://192.168.1.69:8310`).
 /// Production writes are governance-gated (contract §6): the connect/capabilities
 /// skills warn before any production write.
 pub const DEFAULT_BASE_URL: &str = "https://easybooks.jackyzhang.app";
@@ -24,21 +24,21 @@ pub struct Config {
 
 impl Config {
     /// Resolve effective config. Precedence for each field:
-    ///   api_key:  --token arg → $EASYBOOKS_API_KEY env → config file
+    ///   api_key:  $EASYBOOKS_API_KEY env → config file
     ///   base_url: --base-url arg → $EASYBOOKS_API_URL env → config file → DEFAULT
     ///             (DEFAULT is PROD: https://easybooks.jackyzhang.app)
     /// If no api_key can be resolved anywhere, this is a hard "not logged in"
     /// error pointing the user at `easybooks login`.
-    pub fn load(base_url_arg: Option<String>, token_arg: Option<String>) -> Result<Self> {
+    pub fn load(base_url_arg: Option<String>) -> Result<Self> {
         let file = read_config_file()?;
 
-        let api_key = token_arg
-            .or_else(|| env::var("EASYBOOKS_API_KEY").ok())
+        let api_key = env::var("EASYBOOKS_API_KEY")
+            .ok()
             .or_else(|| file.as_ref().map(|c| c.api_key.clone()))
             .filter(|k| !k.is_empty())
             .with_context(|| {
                 format!(
-                    "not logged in: run 'easybooks login --token <key>' (config: {})",
+                    "not logged in: run 'easybooks login --token-stdin' (config: {})",
                     config_path().unwrap_or_else(|_| "~/.easybooks/config.json".into())
                 )
             })?;
@@ -77,6 +77,11 @@ pub fn mask_key(_key: &str) -> String {
 
 fn read_config_file() -> Result<Option<Config>> {
     let path = config_path()?;
+    if let Ok(metadata) = fs::symlink_metadata(&path) {
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            anyhow::bail!("config path is not a regular file: {}", path);
+        }
+    }
     match fs::read_to_string(&path) {
         Ok(data) => {
             let cfg: Config = serde_json::from_str(&data)
@@ -106,7 +111,13 @@ pub fn config_path_buf() -> Result<PathBuf> {
 pub fn save(api_key: &str, base_url: &str) -> Result<()> {
     let path = config_path_buf()?;
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
+        if let Ok(metadata) = fs::symlink_metadata(parent) {
+            if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                anyhow::bail!("config directory is not a real directory: {}", parent.display());
+            }
+        } else {
+            fs::create_dir_all(parent)?;
+        }
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -118,7 +129,40 @@ pub fn save(api_key: &str, base_url: &str) -> Result<()> {
         base_url: base_url.to_string(),
     };
     let data = serde_json::to_vec_pretty(&cfg)?;
-    fs::write(&path, data).with_context(|| format!("writing config to {}", path.display()))?;
+    if let Ok(metadata) = fs::symlink_metadata(&path) {
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            anyhow::bail!("config path is not a regular file: {}", path.display());
+        }
+    }
+    let temporary = path.with_file_name(format!(
+        ".config.json.{}.tmp",
+        std::process::id()
+    ));
+    if temporary.exists() {
+        anyhow::bail!("temporary config path already exists");
+    }
+    let write_result = (|| -> Result<()> {
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options
+            .open(&temporary)
+            .with_context(|| format!("creating temporary config beside {}", path.display()))?;
+        file.write_all(&data)
+            .context("writing temporary EasyBooks config")?;
+        file.sync_all().context("syncing temporary EasyBooks config")?;
+        fs::rename(&temporary, &path)
+            .with_context(|| format!("replacing config at {}", path.display()))?;
+        Ok(())
+    })();
+    if write_result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    write_result?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

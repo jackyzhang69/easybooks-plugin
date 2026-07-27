@@ -36,7 +36,7 @@ pub struct DoctorArgs {
     pub check_upgrade: bool,
 }
 
-pub fn run(args: DoctorArgs, base_url_arg: Option<String>, token_arg: Option<String>) -> Result<()> {
+pub fn run(args: DoctorArgs, base_url_arg: Option<String>) -> Result<()> {
     let self_version = env!("CARGO_PKG_VERSION");
 
     // Canonicalise so symlink-launched binaries report the same ancestor chain
@@ -48,7 +48,7 @@ pub fn run(args: DoctorArgs, base_url_arg: Option<String>, token_arg: Option<Str
     let cache = bootstrap::detect_cache_status(self_exe.as_deref(), self_version);
 
     // ---- config block (always local) -------------------------------------
-    let cfg = Config::load(base_url_arg, token_arg).ok();
+    let cfg = Config::load(base_url_arg).ok();
     let config_present = config::config_path_buf()
         .map(|p| p.is_file())
         .unwrap_or(false);
@@ -104,7 +104,7 @@ fn backend_probe(cfg: Option<&Config>) -> serde_json::Value {
         return serde_json::json!({
             "reachable": false,
             "status": "no_config",
-            "hint": "run `easybooks login --token <key>` first",
+            "hint": "run `easybooks login --token-stdin` first",
         });
     };
     let client = match reqwest::blocking::Client::builder()
@@ -144,7 +144,7 @@ fn backend_probe(cfg: Option<&Config>) -> serde_json::Value {
         return serde_json::json!({
             "reachable": true,
             "status": "unauthorized",
-            "hint": "API key rejected — re-run `easybooks login --token <key>`",
+            "hint": "API key rejected — re-run `easybooks login --token-stdin`",
         });
     }
     if !status.is_success() {

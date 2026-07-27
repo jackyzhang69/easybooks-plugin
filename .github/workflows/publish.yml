@@ -1,148 +1,114 @@
-name: Publish
+name: build-sign-plugin
 
-# Direct publisher (mirrors formbro-plugin): build both supported targets in one
-# macOS runner workspace and upload the GitHub release directly — no
-# actions/upload-artifact two-job handoff (avoids artifact-quota failures).
-#
-# Rust-only CLI: no bun / pdf / webform steps, no lazy runtime assets.
-#
-# darwin-x64 and linux-x64 can be added to the build matrix below once the
-# corresponding cross-toolchains are present on the runner (see .cargo/config.toml).
 on:
   push:
-    tags: ['v*']
+    tags:
+      - 'plugin-v*'
+  workflow_dispatch:
+
+concurrency:
+  group: easybooks-plugin-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  publish:
-    # Fallback: change to `runs-on: macos-14` if no self-hosted ARM64 runner exists.
-    runs-on: [self-hosted, macOS, ARM64]
+  build-sign:
+    runs-on: [self-hosted, macOS, ARM64, easybooks-plugin-69]
     permissions:
       contents: write
     env:
       VERSION: ${{ github.ref_name }}
-      STAGE: /tmp/easybooks-publish-stage
+      STAGE: /tmp/easybooks-plugin-build-stage
+      IS_TAG: ${{ github.event_name == 'push' }}
+      CODESIGN_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_NOTARIZE_PASS: ${{ secrets.APPLE_NOTARIZE_PASS }}
+
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - name: Ensure rustup on PATH
-        run: echo "$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/bin" >> "$GITHUB_PATH"
-
-      - name: Verify cross-compile env
+      - name: Ensure Rust targets
         run: |
           set -euo pipefail
-          which x86_64-w64-mingw32-gcc || (echo "::error::mingw-w64 missing on runner (brew install mingw-w64)" && exit 1)
-
-      - name: Add Rust targets
-        run: |
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           rustup target add aarch64-apple-darwin
           rustup target add x86_64-pc-windows-gnu
+          command -v x86_64-w64-mingw32-gcc
 
-      - name: Skills mirror lock-step (.claude/skills == .agents/skills)
-        run: bash scripts/sync-skills.sh
+      - name: Verify tag and source version
+        if: env.IS_TAG == 'true'
+        run: python3 scripts/assert_plugin_version.py --tag "$VERSION" --root .
 
-      - name: Build Rust binaries
+      - name: Verify source
+        run: |
+          set -euo pipefail
+          bash scripts/sync-skills.sh
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace --all-targets
+
+      - name: Build release binaries
         run: |
           set -euo pipefail
           cargo build --release --target aarch64-apple-darwin --bin easybooks
           cargo build --release --target x86_64-pc-windows-gnu --bin easybooks
 
-      - name: Stage binaries into bin/<platform>/
+      - name: Require signing configuration
+        run: |
+          set -euo pipefail
+          test -n "$CODESIGN_IDENTITY"
+          test -n "$APPLE_ID"
+          test -n "$APPLE_TEAM_ID"
+          test -n "$APPLE_NOTARIZE_PASS"
+
+      - name: Assemble and sign stage
         run: |
           set -euo pipefail
           rm -rf "$STAGE"
-          mkdir -p "$STAGE/bin/darwin-arm64" "$STAGE/bin/win32-x64"
-          cp target/aarch64-apple-darwin/release/easybooks "$STAGE/bin/darwin-arm64/easybooks"
-          cp target/x86_64-pc-windows-gnu/release/easybooks.exe "$STAGE/bin/win32-x64/easybooks.exe"
-          chmod +x "$STAGE/bin/darwin-arm64/easybooks"
-          chmod +x "$STAGE/bin/win32-x64/easybooks.exe" || true
-
-      - name: Codesign macOS binary
-        env:
-          CODESIGN_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${CODESIGN_IDENTITY:-}" ]]; then
-            echo "::warning::APPLE_DEVELOPER_ID_APPLICATION not set; shipping unsigned macOS binary"
-            exit 0
-          fi
-          codesign --force --options runtime --sign "$CODESIGN_IDENTITY" "$STAGE/bin/darwin-arm64/easybooks"
+          mkdir -p "$STAGE/cli-aarch64-apple-darwin" "$STAGE/cli-x86_64-pc-windows-gnu"
+          cp target/aarch64-apple-darwin/release/easybooks "$STAGE/cli-aarch64-apple-darwin/easybooks"
+          cp target/x86_64-pc-windows-gnu/release/easybooks.exe "$STAGE/cli-x86_64-pc-windows-gnu/easybooks.exe"
+          chmod +x "$STAGE/cli-aarch64-apple-darwin/easybooks"
+          codesign --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$STAGE/cli-aarch64-apple-darwin/easybooks"
+          codesign --verify --strict --verbose=2 "$STAGE/cli-aarch64-apple-darwin/easybooks"
+          python3 scripts/assert_plugin_version.py --tag "$VERSION" --root . --binary "$STAGE/cli-aarch64-apple-darwin/easybooks"
 
       - name: Notarize macOS binary
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_NOTARIZE_PASS: ${{ secrets.APPLE_NOTARIZE_PASS }}
         run: |
           set -euo pipefail
-          if [[ -z "${APPLE_ID:-}" || -z "${APPLE_NOTARIZE_PASS:-}" ]]; then
-            echo "::warning::APPLE_ID/APPLE_NOTARIZE_PASS not set; skipping notarize"
-            exit 0
-          fi
-          ZIP=/tmp/easybooks-notarize.zip
-          (cd "$STAGE/bin/darwin-arm64" && zip "$ZIP" easybooks)
+          ZIP="$RUNNER_TEMP/easybooks-notarize.zip"
+          ditto -c -k --keepParent "$STAGE/cli-aarch64-apple-darwin/easybooks" "$ZIP"
           xcrun notarytool submit "$ZIP" \
             --apple-id "$APPLE_ID" \
             --team-id "$APPLE_TEAM_ID" \
-            --password "$APPLE_NOTARIZE_PASS" --wait
+            --password "$APPLE_NOTARIZE_PASS" \
+            --wait
 
-      - name: Stage skills bundle
+      - name: Seal immutable signed stage
         run: |
           set -euo pipefail
-          # The published plugin's skills/ is populated from .claude/skills
-          # (kept byte-identical to .agents/skills by scripts/sync-skills.sh).
-          tar czf "$STAGE/skills-bundle-${VERSION}.tar.gz" -C "$GITHUB_WORKSPACE/.claude/skills" .
+          (
+            cd "$STAGE"
+            shasum -a 256 cli-aarch64-apple-darwin/easybooks > cli-aarch64-apple-darwin/easybooks.sha256
+            shasum -a 256 cli-x86_64-pc-windows-gnu/easybooks.exe > cli-x86_64-pc-windows-gnu/easybooks.exe.sha256
+            tar czf easybooks-cli-signed-stage.tar.gz cli-aarch64-apple-darwin cli-x86_64-pc-windows-gnu
+            shasum -a 256 easybooks-cli-signed-stage.tar.gz > easybooks-cli-signed-stage.tar.gz.sha256
+          )
 
-      - name: Render runtime manifest
-        run: |
-          set -euo pipefail
-          # No lazy assets to checksum (Rust-only). Stamp the release tag and copy
-          # the authored manifest; any TO_BE_FILLED_BY_CI placeholders remain inert.
-          if command -v jq >/dev/null 2>&1; then
-            jq --arg tag "$VERSION" '
-              if .binary.release == null then .binary.release = {} else . end
-              | .binary.release.tag = $tag
-            ' "$GITHUB_WORKSPACE/plugin-metadata/runtime-manifest.json" \
-              > "$STAGE/runtime-manifest.json"
-          else
-            cp "$GITHUB_WORKSPACE/plugin-metadata/runtime-manifest.json" "$STAGE/runtime-manifest.json"
-          fi
-
-      - name: Stage release archives
-        run: |
-          set -euo pipefail
-          cd "$STAGE"
-          tar czf "easybooks-${VERSION}-aarch64-apple-darwin.tar.gz" -C bin/darwin-arm64 easybooks
-          tar czf "easybooks-${VERSION}-x86_64-pc-windows-gnu.tar.gz" -C bin/win32-x64 easybooks.exe
-          shasum -a 256 *.tar.gz runtime-manifest.json > checksums.txt
-
-      - name: Validate staged artifacts
-        run: |
-          set -euo pipefail
-          test -f "$STAGE/bin/darwin-arm64/easybooks"
-          test -f "$STAGE/bin/win32-x64/easybooks.exe"
-          test -f "$STAGE/runtime-manifest.json"
-          test -f "$STAGE/skills-bundle-${VERSION}.tar.gz"
-          test -f "$STAGE/easybooks-${VERSION}-aarch64-apple-darwin.tar.gz"
-          test -f "$STAGE/easybooks-${VERSION}-x86_64-pc-windows-gnu.tar.gz"
-
-      - name: Publish GitHub release
+      - name: Publish source-provenance release
+        if: env.IS_TAG == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          cd "$STAGE"
-          ASSETS=(
-            "easybooks-${VERSION}-aarch64-apple-darwin.tar.gz"
-            "easybooks-${VERSION}-x86_64-pc-windows-gnu.tar.gz"
-            "skills-bundle-${VERSION}.tar.gz"
-            "runtime-manifest.json"
-            "checksums.txt"
+          assets=(
+            "$STAGE/easybooks-cli-signed-stage.tar.gz"
+            "$STAGE/easybooks-cli-signed-stage.tar.gz.sha256"
           )
           if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$VERSION" "${ASSETS[@]}" --clobber --repo "$GITHUB_REPOSITORY"
-          else
-            gh release create "$VERSION" "${ASSETS[@]}" \
-              --title "EasyBooks $VERSION" \
-              --notes "EasyBooks CLI plugin release $VERSION (built from ${{ github.sha }})." \
-              --repo "$GITHUB_REPOSITORY"
+            echo "::error::immutable release already exists for $VERSION"
+            exit 1
           fi
+          gh release create "$VERSION" "${assets[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "EasyBooks CLI $VERSION" \
+            --notes "Signed EasyBooks plugin stage built from immutable source ${{ github.sha }}."

@@ -239,13 +239,8 @@ fn login_writes_config_and_masks_key() {
     let home = tempfile::tempdir().expect("tempdir");
     easybooks()
         .env("HOME", home.path())
-        .args([
-            "login",
-            "--token",
-            "eb_live_super_secret_value",
-            "--base-url",
-            "http://192.168.1.98:8310",
-        ])
+        .args(["login", "--token-stdin", "--base-url", "http://192.168.1.69:8310"])
+        .write_stdin("eb_live_super_secret_value\n")
         .assert()
         .success()
         .stdout(predicate::str::contains(r#""api_key_masked": "eb_***""#))
@@ -261,7 +256,116 @@ fn login_writes_config_and_masks_key() {
         use std::os::unix::fs::PermissionsExt;
         let mode = std::fs::metadata(&cfg).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600, "config.json must be mode 0600");
+        let directory_mode = std::fs::metadata(cfg.parent().unwrap())
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(directory_mode, 0o700, ".easybooks must be mode 0700");
     }
+}
+
+#[test]
+fn login_rejects_token_argument() {
+    for arguments in [
+        vec!["login", "--token", "eb_live_must_not_enter_argv"],
+        vec!["login", "--token=eb_live_must_not_enter_argv"],
+    ] {
+        let home = tempfile::tempdir().expect("tempdir");
+        easybooks()
+            .env("HOME", home.path())
+            .args(arguments)
+            .assert()
+            .failure()
+            .stdout(predicate::str::contains("eb_live_must_not_enter_argv").not())
+            .stderr(predicate::str::contains("eb_live_must_not_enter_argv").not());
+    }
+}
+
+#[test]
+fn login_rejects_empty_or_multiline_stdin() {
+    for input in [
+        "\n",
+        "eb_live_first\neb_live_second\n",
+        "eb_live_extra_blank\n\n",
+        " eb_live_leading_space\n",
+    ] {
+        let home = tempfile::tempdir().expect("tempdir");
+        easybooks()
+            .env("HOME", home.path())
+            .args(["login", "--token-stdin"])
+            .write_stdin(input)
+            .assert()
+            .failure()
+            .stdout(predicate::str::contains("eb_live_").not())
+            .stderr(predicate::str::contains("eb_live_").not());
+        assert!(!home.path().join(".easybooks/config.json").exists());
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn login_rejects_symlinked_config_directory() {
+    use std::os::unix::fs::symlink;
+
+    let home = tempfile::tempdir().expect("home");
+    let outside = tempfile::tempdir().expect("outside");
+    symlink(outside.path(), home.path().join(".easybooks")).expect("create symlink");
+
+    easybooks()
+        .env("HOME", home.path())
+        .args(["login", "--token-stdin"])
+        .write_stdin("eb_live_symlink_test\n")
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("eb_live_symlink_test").not())
+        .stderr(predicate::str::contains("eb_live_symlink_test").not());
+
+    assert!(!outside.path().join("config.json").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn login_and_load_reject_symlinked_config_file() {
+    use std::os::unix::fs::symlink;
+
+    let home = tempfile::tempdir().expect("home");
+    let config_directory = home.path().join(".easybooks");
+    std::fs::create_dir(&config_directory).expect("create config directory");
+    let outside = home.path().join("outside-config.json");
+    std::fs::write(&outside, "must remain unchanged").expect("write outside target");
+    symlink(&outside, config_directory.join("config.json")).expect("create config symlink");
+
+    easybooks()
+        .env("HOME", home.path())
+        .args(["login", "--token-stdin"])
+        .write_stdin("eb_live_symlink_file\n")
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("eb_live_symlink_file").not())
+        .stderr(predicate::str::contains("eb_live_symlink_file").not());
+    easybooks()
+        .env("HOME", home.path())
+        .arg("whoami")
+        .assert()
+        .failure();
+
+    assert_eq!(
+        std::fs::read_to_string(outside).expect("read outside target"),
+        "must remain unchanged"
+    );
+}
+
+#[test]
+fn login_rejects_oversized_stdin() {
+    let home = tempfile::tempdir().expect("home");
+    easybooks()
+        .env("HOME", home.path())
+        .args(["login", "--token-stdin"])
+        .write_stdin("x".repeat(4097))
+        .assert()
+        .failure();
+    assert!(!home.path().join(".easybooks/config.json").exists());
 }
 
 /// Read back the `base_url` persisted to `<home>/.easybooks/config.json`.
@@ -289,7 +393,8 @@ fn login_uses_env_base_url_when_arg_absent() {
     easybooks()
         .env("HOME", home.path())
         .env("EASYBOOKS_API_URL", TEST_URL)
-        .args(["login", "--token", "eb_live_envonly"])
+        .args(["login", "--token-stdin"])
+        .write_stdin("eb_live_envonly\n")
         .assert()
         .success()
         .stdout(predicate::str::contains(TEST_URL));
@@ -305,11 +410,12 @@ fn login_uses_env_base_url_when_arg_absent() {
 #[test]
 fn login_arg_overrides_env_base_url() {
     let home = tempfile::tempdir().expect("tempdir");
-    let arg_url = "http://192.168.1.98:8310";
+    let arg_url = "http://192.168.1.69:8310";
     easybooks()
         .env("HOME", home.path())
         .env("EASYBOOKS_API_URL", TEST_URL)
-        .args(["login", "--token", "eb_live_argwins", "--base-url", arg_url])
+        .args(["login", "--token-stdin", "--base-url", arg_url])
+        .write_stdin("eb_live_argwins\n")
         .assert()
         .success()
         .stdout(predicate::str::contains(arg_url));
@@ -329,7 +435,8 @@ fn login_defaults_to_prod_when_arg_and_env_absent() {
     easybooks()
         .env("HOME", home.path())
         .env_remove("EASYBOOKS_API_URL")
-        .args(["login", "--token", "eb_live_default"])
+        .args(["login", "--token-stdin"])
+        .write_stdin("eb_live_default\n")
         .assert()
         .success()
         .stdout(predicate::str::contains(PROD_URL));

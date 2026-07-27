@@ -10,9 +10,9 @@ jobs:
   test:
     # Mirrors formbro CI. Fallback: change to `runs-on: macos-14` if no
     # self-hosted Apple-silicon runner is available (macos-14 is GitHub-hosted ARM64).
-    runs-on: [self-hosted, macOS, ARM64]
+    runs-on: [self-hosted, macOS, ARM64, easybooks-plugin-69]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Tool versions
         run: |
@@ -23,6 +23,11 @@ jobs:
 
       - name: Skills mirror lock-step (.claude/skills == .agents/skills)
         run: bash scripts/sync-skills.sh
+
+      - name: Version metadata lock-step
+        run: |
+          python3 -m py_compile scripts/assert_plugin_version.py plugin-metadata/scripts/verify-install
+          python3 scripts/assert_plugin_version.py --root .
 
       - name: Cargo build (release)
         run: cargo build --release --target aarch64-apple-darwin
@@ -35,7 +40,7 @@ jobs:
 
       - name: Upload test logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: cargo-test-log
           path: /tmp/cargo-test.log

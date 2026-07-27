@@ -68,10 +68,10 @@ enum Command {
 
 #[derive(Args)]
 struct LoginArgs {
-    /// The user's personal EasyBooks API key (`eb_live_...`). It both
-    /// authenticates and identifies the user. Never printed.
-    #[arg(long)]
-    token: String,
+    /// Read the personal EasyBooks API key from standard input. The value is
+    /// never accepted as a command-line argument or printed.
+    #[arg(long, required = true)]
+    token_stdin: bool,
     /// Backend base URL. When omitted, resolved at login time through the
     /// documented precedence (contract §6): `--base-url` → `$EASYBOOKS_API_URL`
     /// → DEFAULT (PROD `https://easybooks.jackyzhang.app`). Override for
@@ -514,6 +514,12 @@ fn main() {
 }
 
 fn run() -> Result<()> {
+    if std::env::args_os().skip(1).any(|argument| {
+        let argument = argument.to_string_lossy();
+        argument == "--token" || argument.starts_with("--token=")
+    }) {
+        anyhow::bail!("unsupported option '--token'; use `easybooks login --token-stdin`");
+    }
     let cli = Cli::parse();
     let base_url_arg = cli.base_url;
     // `--json` / `--quiet` exist for parity with formbro's global flags. Output
@@ -527,8 +533,8 @@ fn run() -> Result<()> {
     // missing config and runs its own scoped (optional) network probe. Handle
     // them first so they work before/without a successful `Config::load`.
     match cli.command {
-        Command::Login(args) => setup::login(&args.token, args.base_url),
-        Command::Doctor(args) => doctor::run(args, base_url_arg, None),
+        Command::Login(args) => setup::login_from_stdin(args.token_stdin, args.base_url),
+        Command::Doctor(args) => doctor::run(args, base_url_arg),
         other => dispatch(other, base_url_arg),
     }
 }
@@ -536,7 +542,7 @@ fn run() -> Result<()> {
 /// Build the authenticated client from config and dispatch every command that
 /// talks to the backend. Split out so `run` can short-circuit `login`/`doctor`.
 fn dispatch(command: Command, base_url_arg: Option<String>) -> Result<()> {
-    let config = config::Config::load(base_url_arg, None)?;
+    let config = config::Config::load(base_url_arg)?;
     let client = client::ApiClient::new(config.base_url.clone(), config.api_key.clone())?;
 
     match command {
@@ -623,8 +629,8 @@ fn dispatch(command: Command, base_url_arg: Option<String>) -> Result<()> {
                 limit,
             } => tx_query::list(
                 &client,
-                type_filter.map(|t| t.as_str()).as_deref(),
-                classification.map(|c| c.as_str()).as_deref(),
+                type_filter.map(|t| t.as_str()),
+                classification.map(|c| c.as_str()),
                 review.as_deref(),
                 from.as_deref(),
                 to.as_deref(),

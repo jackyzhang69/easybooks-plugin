@@ -37,7 +37,7 @@ Resolution order — first existing executable wins:
 3. Codex cache: `$HOME/.codex/plugins/cache/jacky-plugins/easybooks-cli/<highest-version>/bin/<platform>/easybooks`
 4. `command -v easybooks` (manual PATH install)
 
-`<platform>` ∈ `darwin-arm64`, `darwin-x64`, `linux-x64`, `win32-x64` (binary `easybooks.exe` on win32-x64).
+The public bundle currently supports `darwin-arm64` and `win32-x64`; other hosts require an explicit trusted binary override or PATH installation.
 
 ---
 
@@ -64,14 +64,15 @@ Global behavior:
 Commands:
 
 ### Setup / health
-- `easybooks login --token <eb_live_...> [--base-url <url>]`
+- `easybooks login --token-stdin [--base-url <url>]`
   Persists `{ api_key, base_url }` to `~/.easybooks/config.json` (mode 0600).
-  `--token` is the user's personal EasyBooks API key (`eb_live_...`), generated in the
-  EasyBooks web app (Settings → API Keys), scope `read` or `read_write`. The key both
+  The CLI reads the user's personal EasyBooks API key (`eb_live_...`) from a hidden
+  terminal prompt or bounded piped stdin; it is never accepted in argv. The key is generated in the
+  EasyBooks web app (Settings → API Keys), scope `read` or `read_write`. It both
   authenticates AND identifies the user — there is NO separate owner id. `--base-url`
   default `https://easybooks.jackyzhang.app` (PROD, immicore-served eb-plugin via the
   eb frontend nginx `/api` proxy). Override for test:
-  `https://easybooks-test.jackyzhang.app`; for LAN: `http://192.168.1.98:8310`.
+  `https://easybooks-test.jackyzhang.app`; for LAN: `http://192.168.1.69:8310`.
   Output: `{"status":"ok","path":"~/.easybooks/config.json","base_url":"...","api_key_masked":"eb_***"}`.
 - `easybooks whoami`
   Calls `GET /api/integrations/whoami` (the key identifies the user). Output:
@@ -190,8 +191,8 @@ with its own auth; it is unchanged by this per-user-key model.
 Each skill is `<name>/SKILL.md` with frontmatter `name`, `description`, `when_to_use`.
 Skill set:
 - `connect-easybooks` — one-time setup: the user generates a personal API key in the EasyBooks web app
-  (Settings → API Keys, scope `read` or `read_write`), then run `easybooks login --token <eb_live_...>
-  [--base-url <url>]`, then `whoami`/`doctor`. Token rules identical to formbro connect (never log key;
+  (Settings → API Keys, scope `read` or `read_write`), then the user runs `easybooks login --token-stdin
+  [--base-url <url>]` locally and enters it at the hidden prompt, then `whoami`/`doctor`. Never place the key in chat, argv, shell history, or agent tool input. Token rules include never logging the key;
   mask `eb_***`; only the CLI's config.json holds it). Tells agent to load `easybooks-capabilities` next.
 - `easybooks-capabilities` — READ-FIRST router. Top-20-line intent→command table. §B binary resolver
   (adapted to `easybooks`/`$EASYBOOKS_BIN`/`easybooks-cli` cache path). Non-negotiable operating rules
@@ -217,7 +218,7 @@ Routing principle: `easybooks-capabilities` is loaded first every session and po
   capabilities `["Read","Write"]`, defaultPrompt examples like:
   "Record this receipt into EasyBooks", "Log a $120 expense for software on 2026-05-01",
   "Create an invoice for <client> for <items>", "Scan my Gmail for receipts and record them").
-- `runtime-manifest.json` — `{ version, binary:{ name:"easybooks", platforms:{ "darwin-arm64":{entrypoint:"bin/darwin-arm64/easybooks"}, "darwin-x64":{...}, "linux-x64":{...}, "win32-x64":{entrypoint:"bin/win32-x64/easybooks.exe"} } } }`. No lazy assets (unlike formbro — no pdfjs/webform). Keep it minimal.
+- `runtime-manifest.json` — declares only the currently bundled `darwin-arm64` and `win32-x64` binaries. No lazy assets (unlike FormBro — no PDF/webform runtime).
 - `README.md` (marketplace-facing) describing the plugin + the connect flow.
 
 Note: the published plugin's `skills/` is populated from `.claude/skills` (or `.agents/skills`) by the
@@ -229,13 +230,13 @@ CI/packaging copy them into the published bundle. Document the chosen mechanism 
 ## 6. Governance (platform-vault) — REQUIRED, surface to user
 
 - EasyBooks is NOT a normalized vault project; the closest precedent is the audit→easybooks integration,
-  whose **production** writes/deploys all required approval artifacts.
+  whose **production** writes/deploys require the explicit current-session authorization named by the current platform-vault project card.
 - The CLI **defaults to the PROD backend** (`https://easybooks.jackyzhang.app`), which is the immicore
   Go eb-plugin reached via the eb frontend domain's nginx `/api` proxy (`/api/integrations/*`). The legacy
   Node backend on `http://localhost:8080` is no longer the default. Override with `--base-url` /
   `$EASYBOOKS_API_URL` for **test** (`https://easybooks-test.jackyzhang.app`, served by immicore-test) or
-  **LAN** (`http://192.168.1.98:8310`). Because the default is production, any **write** command (record,
-  import, invoice create/send) is a production write: it is gated and requires an approval artifact, and the
+  **LAN** (`http://192.168.1.69:8310`). Because the default is production, any **write** command (record,
+  import, invoice create/send) is a production write: it is gated by the current platform-vault project card, and the
   skills must warn the user before any production write.
 - The user's API key is a secret: never printed/logged; lives only in `~/.easybooks/config.json` (CLI).
   Keys are minted per-user in the EasyBooks web app and carry a scope (`read` / `read_write`); a user
@@ -250,10 +251,12 @@ CI/packaging copy them into the published bundle. Document the chosen mechanism 
 - `.github/workflows/ci.yml` — on PR/push to main: `cargo build --release --target aarch64-apple-darwin`,
   `cargo clippy --release -- -D warnings`, `cargo test --release`. Use `runs-on: [self-hosted, macOS, ARM64]`
   to match formbro (fallback note for `macos-14` if no self-hosted runner).
-- `.github/workflows/publish.yml` — on tag `v*`: build `aarch64-apple-darwin` + `x86_64-pc-windows-gnu`
-  (+ darwin-x64, linux-x64 if toolchains available), stage binaries, create a GitHub release with the
-  binaries + a `skills` bundle + `runtime-manifest.json`. Model on formbro `publish.yml` but drop all
-  bun/pdf/webform steps. Fill `runtime-manifest` sha256 as `TO_BE_FILLED_BY_CI` placeholders if needed.
+- `.github/workflows/publish.yml` — on immutable `plugin-v*` tag, verify exact version/source,
+  build `aarch64-apple-darwin` + `x86_64-pc-windows-gnu`, require macOS signing/notarization,
+  and upload one signed stage plus checksum to the source-repository Release. It never pushes the
+  marketplace.
+- Marketplace publication consumes the verified source Release, assembles all pending plugin
+  packages, reviews the combined tree, and performs one normal fast-forward marketplace push.
 - `scripts/build-local.sh` — `cargo build --release --target aarch64-apple-darwin` then copy to
   `bin/darwin-arm64/easybooks`; optional codesign (env `CODESIGN_IDENTITY`).
 - `scripts/verify-runtime-readiness.sh` — JSON-emitting readiness gate: required files present

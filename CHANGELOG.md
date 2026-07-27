@@ -2,6 +2,18 @@
 
 All notable changes to the EasyBooks plugin (`easybooks-cli`) are recorded here.
 
+## 0.5.0 — 2026-07-27
+
+- Removed secret-bearing `login --token <value>` argv input. One-time login now
+  uses bounded stdin and a non-echoing terminal prompt.
+- Added atomic symlink-safe credential writes, mode-0700 directory and mode-0600
+  file enforcement, default-production/URL-precedence coverage, and argv/output
+  leak regression tests.
+- Updated connection skills so the user enters the token locally; chat, agent
+  tool calls, shell history, and generated token-bearing pipes are prohibited.
+- Aligned plugin governance with the platform-vault current-session production
+  gate and fixed the current Rust Clippy release gate.
+
 ## 0.1.0 — unreleased
 
 Initial scaffold of the EasyBooks Codex/Claude Code plugin. Records invoices,
@@ -36,6 +48,6 @@ receipts, and Gmail-sourced finance data into EasyBooks through a bundled
   `docs/architecture.md`.
 - **Governance**: PROD-default backend (`https://easybooks.jackyzhang.app`, the
   immicore eb-plugin via the eb frontend nginx `/api` proxy; test override
-  `https://easybooks-test.jackyzhang.app`, LAN `http://192.168.1.98:8310`); any
+  `https://easybooks-test.jackyzhang.app`, LAN `http://192.168.1.69:8310`); any
   production write is approval-gated; secrets declared by name only (no values);
   backend deploys and migrations are not performed in this build.

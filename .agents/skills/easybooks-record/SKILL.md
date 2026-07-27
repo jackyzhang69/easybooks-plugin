@@ -175,6 +175,6 @@ Recorded rows are upserted on **`(user_id, source_system, source_id)`**. That me
 
 ## Governance
 
-- The CLI **defaults to the PROD backend** (`https://easybooks.jackyzhang.app`, the immicore eb-plugin via the eb frontend nginx `/api` proxy); the legacy Node `http://localhost:8080` is no longer the default. Override to test (`https://easybooks-test.jackyzhang.app`) or LAN (`http://192.168.1.98:8310`) via `--base-url`. Because the default is production, recording is a production write and requires an approval artifact (see `easybooks-capabilities` §G). If you'd be writing to production without one, stop and tell the user.
+- The CLI **defaults to the PROD backend** (`https://easybooks.jackyzhang.app`, the immicore eb-plugin via the eb frontend nginx `/api` proxy); the legacy Node `http://localhost:8080` is no longer the default. Override to test (`https://easybooks-test.jackyzhang.app`) or LAN (`http://192.168.1.69:8310`) via `--base-url`. Recording there is a production mutation: require the explicit current-session authorization named by the platform-vault project card (see `easybooks-capabilities` §G), or stop.
 - Recording requires a **read_write** API key. If the CLI returns a scope/permission error, the user's key is read-only — tell them to create a Read & write key in the EasyBooks web app (Settings → API Keys).
 - Never print the user's API key; it is masked as `eb_***` and lives only in `~/.easybooks/config.json`.

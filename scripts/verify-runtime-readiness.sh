@@ -65,6 +65,7 @@ PLATFORM="$(detect_platform)"
 # --- Manifests ---
 require_file "$ROOT/plugin-metadata/runtime-manifest.json"
 require_file "$ROOT/plugin-metadata/.claude-plugin/plugin.json"
+require_file "$ROOT/plugin-metadata/scripts/verify-install"
 # .codex-plugin/plugin.json is part of the metadata superset; required if the dir exists.
 if [[ -d "$ROOT/plugin-metadata/.codex-plugin" ]]; then
   require_file "$ROOT/plugin-metadata/.codex-plugin/plugin.json"

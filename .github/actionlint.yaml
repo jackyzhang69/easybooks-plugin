@@ -1,0 +1,4 @@
+self-hosted-runner:
+  labels:
+    - easybooks-plugin-69
+config-variables: null

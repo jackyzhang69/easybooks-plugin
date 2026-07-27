@@ -10,7 +10,7 @@
 //!   - `rules disable <id>`        → PATCH  /api/integrations/rules/{id} {enabled:false}
 //!   - `rules apply --scope <all|unclassified|selected> [--ids …] [--rule-ids …]
 //!      [--only-auto-apply] [--commit]`
-//!                                 → POST   /api/integrations/rules/apply
+//!     → POST   /api/integrations/rules/apply
 //!
 //! Every call goes through the bundled `ApiClient` so it carries the user's
 //! `eb_live_` Bearer key exactly like every other read/write. Identity comes

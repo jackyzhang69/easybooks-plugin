@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+"""Read-only JSON verifier for an installed EasyBooks marketplace plugin."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import platform
+from pathlib import Path
+import subprocess
+import sys
+
+
+PLUGIN_ID = "easybooks-cli@jacky-plugins"
+
+
+def read_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def run_json(command: list[str]) -> tuple[dict | None, str | None]:
+    try:
+        completed = subprocess.run(
+            command,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=60,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as error:
+        return None, str(error)
+    if completed.returncode:
+        return None, (completed.stderr or completed.stdout).strip() or f"exit {completed.returncode}"
+    try:
+        return json.loads(completed.stdout), None
+    except json.JSONDecodeError as error:
+        return None, f"invalid JSON: {error}"
+
+
+def current_platform() -> tuple[str | None, str | None]:
+    system, machine = platform.system().lower(), platform.machine().lower()
+    if system == "darwin" and machine in {"arm64", "aarch64"}:
+        return "darwin-arm64", "easybooks"
+    if system == "windows" and machine in {"amd64", "x86_64"}:
+        return "win32-x64", "easybooks.exe"
+    return None, None
+
+
+def marketplace_residue() -> list[str]:
+    root = Path.home() / ".codex" / ".tmp" / "marketplaces"
+    candidates = [root / ".staging", root / ".backups"]
+    return [
+        str(path)
+        for candidate in candidates
+        if candidate.exists()
+        for path in candidate.glob("marketplace-upgrade-*")
+        if path.is_dir()
+    ]
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Verify an EasyBooks marketplace installation.")
+    parser.add_argument("--expected-version", required=True)
+    parser.add_argument("--loaded-skill-path")
+    parser.add_argument("--strict-residue", action="store_true")
+    args = parser.parse_args()
+
+    root = Path(__file__).resolve().parents[1]
+    failures: list[str] = []
+    warnings: list[str] = []
+    codex = read_json(root / ".codex-plugin/plugin.json")
+    claude = read_json(root / ".claude-plugin/plugin.json")
+    runtime = read_json(root / "runtime-manifest.json")
+    if codex.get("version") != args.expected_version or claude.get("version") != args.expected_version:
+        failures.append("plugin_manifest_version_mismatch")
+    platforms = runtime.get("binary", {}).get("platforms", {})
+    if set(platforms) != {"darwin-arm64", "win32-x64"}:
+        failures.append("runtime_platform_set_mismatch")
+
+    installed, installed_error = run_json(["codex", "plugin", "list", "--json"])
+    entry = next((item for item in (installed or {}).get("installed", []) if item.get("pluginId") == PLUGIN_ID), None)
+    if installed_error:
+        warnings.append(f"codex_plugin_list_unavailable:{installed_error}")
+    elif not entry or entry.get("version") != args.expected_version:
+        failures.append("codex_plugin_list_version_mismatch")
+
+    if args.loaded_skill_path:
+        normalized = args.loaded_skill_path.replace("\\", "/")
+        if f"/easybooks-cli/{args.expected_version}/skills/" not in normalized:
+            failures.append("loaded_skill_path_version_mismatch")
+
+    platform_name, binary_name = current_platform()
+    if not platform_name:
+        warnings.append("host_platform_not_bundled")
+    else:
+        binary = root / "bin" / platform_name / binary_name
+        checksum = binary.with_name(binary.name + ".sha256")
+        if not binary.is_file() or not checksum.is_file():
+            failures.append("bundled_binary_or_checksum_missing")
+        else:
+            expected_hash = checksum.read_text(encoding="utf-8").split()[0]
+            if hashlib.sha256(binary.read_bytes()).hexdigest() != expected_hash:
+                failures.append("bundled_binary_checksum_mismatch")
+            doctor, error = run_json([str(binary), "doctor", "--json", "--no-fetch"])
+            if error:
+                failures.append("doctor_failed")
+                warnings.append(error)
+            elif doctor and doctor.get("binary_version") != args.expected_version:
+                failures.append("doctor_binary_version_mismatch")
+
+    residue = marketplace_residue()
+    if residue:
+        if args.strict_residue:
+            failures.append("marketplace_upgrade_residue_present")
+        else:
+            warnings.append("marketplace_upgrade_residue_present")
+
+    result = {
+        "ok": not failures,
+        "failures": sorted(set(failures)),
+        "next_actions": [] if not failures else ["Reinstall easybooks-cli from jacky-plugins and rerun this verifier."],
+        "plugin_root": str(root),
+        "residue": residue,
+        "warnings": sorted(set(warnings)),
+    }
+    print(json.dumps(result, sort_keys=True))
+    return 0 if result["ok"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+

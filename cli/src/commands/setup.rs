@@ -1,10 +1,11 @@
 use crate::client::ApiClient;
 use crate::config::{self, Config};
 use crate::output;
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 use serde_json::json;
+use std::io::{self, IsTerminal, Read, Write};
 
-/// `easybooks login --token <eb_live_...> [--base-url <url>]`
+/// `easybooks login --token-stdin [--base-url <url>]`
 ///
 /// Persists `{ api_key, base_url }` to ~/.easybooks/config.json (mode 0600).
 /// The key is the user's personal EasyBooks API key; it both authenticates and
@@ -17,16 +18,50 @@ use serde_json::json;
 /// is intentionally dropped) so the env tier is honoured before falling back to
 /// PROD. The config-file tier is `None` here because login is *writing* the
 /// file and must not read a stale value back.
-pub fn login(token: &str, base_url_arg: Option<String>) -> Result<()> {
+pub fn login_from_stdin(token_stdin: bool, base_url_arg: Option<String>) -> Result<()> {
+    if !token_stdin {
+        bail!("login requires --token-stdin");
+    }
+    let token = read_token()?;
+    if token.is_empty() || token.chars().any(char::is_whitespace) {
+        bail!("API key input must contain exactly one non-empty line");
+    }
     let base_url = config::resolve_base_url(base_url_arg, None);
-    config::save(token, &base_url)?;
+    config::save(&token, &base_url)?;
     let path = config::config_path()?;
     output::print_json(&json!({
         "status": "ok",
         "path": path,
         "base_url": base_url,
-        "api_key_masked": config::mask_key(token),
+        "api_key_masked": config::mask_key(&token),
     }))
+}
+
+fn read_token() -> Result<String> {
+    let token = if io::stdin().is_terminal() {
+        eprint!("EasyBooks API key: ");
+        io::stderr().flush().context("showing API key prompt")?;
+        rpassword::read_password().context("reading hidden API key from terminal")?
+    } else {
+        let mut bytes = Vec::new();
+        io::stdin()
+            .take(4097)
+            .read_to_end(&mut bytes)
+            .context("reading API key from standard input")?;
+        if bytes.len() > 4096 {
+            bail!("API key input exceeds the safety limit");
+        }
+        String::from_utf8(bytes).context("API key input must be UTF-8")?
+    };
+    let token = token
+        .strip_suffix('\n')
+        .map(|line| line.strip_suffix('\r').unwrap_or(line))
+        .unwrap_or(&token)
+        .to_string();
+    if token.len() > 4096 {
+        bail!("API key input exceeds the safety limit");
+    }
+    Ok(token)
 }
 
 /// `easybooks whoami` → GET /api/integrations/whoami.

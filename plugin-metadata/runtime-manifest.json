@@ -6,20 +6,9 @@
       "darwin-arm64": {
         "entrypoint": "bin/darwin-arm64/easybooks"
       },
-      "darwin-x64": {
-        "entrypoint": "bin/darwin-x64/easybooks"
-      },
-      "linux-x64": {
-        "entrypoint": "bin/linux-x64/easybooks"
-      },
       "win32-x64": {
         "entrypoint": "bin/win32-x64/easybooks.exe"
       }
-    },
-    "release": {
-      "host": "github-releases",
-      "repo": "jackyzhang69/plugins",
-      "tag": "TO_BE_FILLED_BY_CI"
     },
     "resolutionOrder": ["${platform}-${arch}"],
     "fallbackBehavior": "fail",

@@ -76,13 +76,14 @@ owner id to provide.
 
 1. Run the `connect-easybooks` skill. It captures the API key and the backend
    base URL.
-2. It runs `easybooks login --token <eb_live_…> [--base-url <url>]`, which writes
+2. You run `easybooks login --token-stdin [--base-url <url>]` in your own terminal and enter the key at the hidden prompt. It writes
    `~/.easybooks/config.json` (mode `0600`).
 3. It confirms the connection with `easybooks whoami` (which echoes your user id
    and scope) and `easybooks doctor`.
 
-Every other skill reads from that config. The key is never asked for again,
-never echoed, and never stored anywhere except that single config file.
+Every other skill reads from that config. The key never enters argv, shell history,
+chat, or agent tool input; it is never asked for again, never echoed, and never
+stored anywhere except that single config file.
 
 ## Governance
 
@@ -95,8 +96,9 @@ EasyBooks is governed under the platform-vault protocol. This build is a
   the eb frontend domain's nginx `/api` proxy. The legacy Node backend on
   `http://localhost:8080` is no longer the default. Override with `--base-url` /
   `$EASYBOOKS_API_URL` for **test** (`https://easybooks-test.jackyzhang.app`) or
-  a **LAN** dev backend (e.g. `http://192.168.1.98:8310`). Because the default is
-  production, any write is gated: it requires an approval artifact, and the
+  a **LAN** dev backend (e.g. `http://192.168.1.69:8310`). Because the default is
+  production, any write is gated by the current platform-vault project card and
+  requires the named explicit current-session authorization; the
   skills warn before any production write.
 - **Secrets are names, not values.** The user's API key is a secret. It is
   never printed or logged and lives only in `~/.easybooks/config.json` (CLI

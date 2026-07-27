@@ -20,7 +20,7 @@ EasyBooks is a self-employed (Canadian) finance app: income/expense transactions
 2. **Local file parsing is allowed only before the CLI boundary.** The agent may read Excel, CSV, PDF, image (receipt photo / scan), email, or plain text locally to extract facts. The moment data is recorded, listed, or mutated, call the CLI.
 3. **Never guess ids.** Resolve category names and client names to ids by recording with names (the backend resolves them) or by listing first (`categories list`, `clients find`, `invoices list`). Do not invent a `category_id` or `client_id`.
 4. **Idempotency is mandatory for any recorded document.** Every parsed receipt / invoice / email row carries a stable `source_id`. Re-running the same import must not double-record. For Gmail, `source_id` is the Gmail message id (see `easybooks-gmail`).
-5. **Production is the default; writes are gated.** The CLI defaults to the PROD backend (`https://easybooks.jackyzhang.app`, the immicore eb-plugin via the eb frontend nginx `/api` proxy). Override to test (`https://easybooks-test.jackyzhang.app`) or LAN (`http://192.168.1.98:8310`) via `--base-url`. Because the default is production, any production write requires an approval artifact — see §G. Warn the user before any production write.
+5. **Production is the default; writes are gated.** The CLI defaults to the PROD backend (`https://easybooks.jackyzhang.app`, the immicore eb-plugin via the eb frontend nginx `/api` proxy). Override to test (`https://easybooks-test.jackyzhang.app`) or LAN (`http://192.168.1.69:8310`) via `--base-url`. Follow the current platform-vault project card and require its current-session authorization before a production mutation — see §G.
 
 ## Agent quick router — TOP 20 LINES (read this first)
 
@@ -51,7 +51,7 @@ User said this → call this exact command (binary resolution: §B; file-drop de
 | "**invoice stats** (counts / amounts by status)" | `easybooks invoice stats [--year <YYYY>]` | easybooks-invoice |
 | "list my **invoices** [that are unpaid/draft]" | `easybooks invoices list [--status <s>]` | easybooks-invoice |
 | "is EasyBooks **healthy** / which backend am I on / token still valid" | `easybooks doctor --json` (local config + backend round-trip + version) | this file |
-| "**connect** EasyBooks / save my API key / set it up" | `connect-easybooks` skill → `easybooks login --token eb_*** --base-url <url>` | connect-easybooks |
+| "**connect** EasyBooks / save my API key / set it up" | `connect-easybooks` skill → user-local hidden entry via `easybooks login --token-stdin [--base-url <url>]` | connect-easybooks |
 | "EasyBooks **out of date**?" | `easybooks doctor --json --no-fetch --check-upgrade` | connect-easybooks |
 
 Routing detail below is supplementary — start with this table.
@@ -67,7 +67,7 @@ The plugin ships a Rust CLI binary that is NOT placed on `PATH` automatically by
 3. **Codex plugin cache** — `$HOME/.codex/plugins/cache/jacky-plugins/easybooks-cli/<highest-version>/bin/<platform>/easybooks` where `<highest-version>` is the highest version dir present and `<platform>` matches the OS/arch.
 4. **`command -v easybooks`** — if the user has installed it on PATH manually (last resort).
 
-`<platform>` ∈ `darwin-arm64`, `darwin-x64`, `linux-x64`, `win32-x64` (binary is `easybooks.exe` on `win32-x64`).
+The public bundle currently supports `darwin-arm64` and `win32-x64` (binary is `easybooks.exe` on Windows). Other hosts require an explicit trusted `EASYBOOKS_BIN` or PATH installation.
 
 **Portable resolver (bash; works on darwin / linux; for Windows agents use the PowerShell variant below):**
 
@@ -75,16 +75,14 @@ The plugin ships a Rust CLI binary that is NOT placed on `PATH` automatically by
 # Detect platform → cache subdir name used by both codex and claude.
 case "$(uname -s)-$(uname -m)" in
   Darwin-arm64)  PLAT=darwin-arm64 ;;
-  Darwin-x86_64) PLAT=darwin-x64 ;;
-  Linux-x86_64)  PLAT=linux-x64 ;;
-  *) echo "unsupported platform: $(uname -s)-$(uname -m)" >&2; return 1 2>/dev/null || exit 1 ;;
+  *) PLAT= ;;
 esac
 
 # Walk a search list in priority order; pick first existing executable.
 EASYBOOKS_BIN_RESOLVED=""
 _cand_paths=(
   "${EASYBOOKS_BIN:-}"
-  "${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/bin/$PLAT/easybooks}"
+  "${CLAUDE_PLUGIN_ROOT:+${PLAT:+$CLAUDE_PLUGIN_ROOT/bin/$PLAT/easybooks}}"
 )
 # Codex cache may have several version dirs; agent picks the *highest* one.
 # Use python sort (universally available) — POSIX `sort -V` is not portable.
@@ -101,7 +99,7 @@ dirs.sort(key=keyfn)
 print(os.path.join(root, dirs[-1]) if dirs else "", end="")
 PY
 )
-  [ -n "$_latest_codex" ] && _cand_paths+=("$_latest_codex/bin/$PLAT/easybooks")
+  [ -n "$_latest_codex" ] && [ -n "$PLAT" ] && _cand_paths+=("$_latest_codex/bin/$PLAT/easybooks")
 fi
 _cand_paths+=("$(command -v easybooks 2>/dev/null)")
 
@@ -286,9 +284,9 @@ The CLI is stateless per invocation. Run independent **reads** in parallel — e
 
 ## §G. Governance — production gate (REQUIRED, surface to user)
 
-- EasyBooks is **not** a normalized platform-vault project. The closest precedent is the audit→EasyBooks integration, whose **production** writes/deploys require approval artifacts.
-- The CLI **defaults to the PROD backend** (`https://easybooks.jackyzhang.app`) — the immicore Go eb-plugin reached via the eb frontend domain's nginx `/api` proxy. The legacy Node backend on `http://localhost:8080` is no longer the default. For non-production work, override to **test** (`https://easybooks-test.jackyzhang.app`) or **LAN** (`http://192.168.1.98:8310`) via `--base-url`.
-- Because the default is production, **any write is a production write** and is gated. Before any command would write to production EasyBooks, you must have an approval artifact. If the user would write to production without one: **stop and tell them an approval artifact is required**; do not proceed.
+- EasyBooks is governed by the current platform-vault `eb` project card and shared plugin policy. Those canonical files outrank this skill if they change.
+- The CLI **defaults to the PROD backend** (`https://easybooks.jackyzhang.app`) — the immicore Go eb-plugin reached via the eb frontend domain's nginx `/api` proxy. The legacy Node backend on `http://localhost:8080` is no longer the default. For non-production work, override to **test** (`https://easybooks-test.jackyzhang.app`) or **LAN** (`http://192.168.1.69:8310`) via `--base-url`.
+- Because the default is production, **any write is a production write** and is gated. Before a production mutation, require the explicit current-session authorization named by the project card. If it is absent, stop; do not invent an artifact or reuse an older approval.
 - The user's API key is a secret. Never print or log it. It lives only in `~/.easybooks/config.json` (CLI). Mask any value as `eb_***`.
 
 ## 8. Token & secret rules
