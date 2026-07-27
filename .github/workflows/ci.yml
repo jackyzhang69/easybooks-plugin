@@ -8,18 +8,16 @@ on:
 
 jobs:
   test:
-    # Mirrors formbro CI. Fallback: change to `runs-on: macos-14` if no
-    # self-hosted Apple-silicon runner is available (macos-14 is GitHub-hosted ARM64).
-    runs-on: [self-hosted, macOS, ARM64, easybooks-plugin-69]
+    # CI is credential-free and must not depend on a repository-scoped signing
+    # runner being online. The tag release remains pinned to the dedicated 69
+    # signing runner.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Tool versions
         run: |
           rustc --version && cargo --version
-
-      - name: Add Rust target
-        run: rustup target add aarch64-apple-darwin
 
       - name: Skills mirror lock-step (.claude/skills == .agents/skills)
         run: bash scripts/sync-skills.sh
@@ -30,13 +28,13 @@ jobs:
           python3 scripts/assert_plugin_version.py --root .
 
       - name: Cargo build (release)
-        run: cargo build --release --target aarch64-apple-darwin
+        run: cargo build --release
 
       - name: Cargo clippy (deny warnings)
-        run: cargo clippy --release --target aarch64-apple-darwin -- -D warnings
+        run: cargo clippy --release --all-targets -- -D warnings
 
       - name: Cargo test (release)
-        run: cargo test --release --target aarch64-apple-darwin 2>&1 | tee /tmp/cargo-test.log
+        run: cargo test --release --all-targets 2>&1 | tee /tmp/cargo-test.log
 
       - name: Upload test logs on failure
         if: failure()
