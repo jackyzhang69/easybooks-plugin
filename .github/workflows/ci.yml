@@ -19,6 +19,11 @@ jobs:
         run: |
           rustc --version && cargo --version
 
+      - name: Install configured Linux linker
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gcc-x86-64-linux-gnu binutils-x86-64-linux-gnu
+
       - name: Skills mirror lock-step (.claude/skills == .agents/skills)
         run: bash scripts/sync-skills.sh
 
