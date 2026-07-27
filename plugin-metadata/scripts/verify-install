@@ -103,7 +103,7 @@ def main() -> int:
             expected_hash = checksum.read_text(encoding="utf-8").split()[0]
             if hashlib.sha256(binary.read_bytes()).hexdigest() != expected_hash:
                 failures.append("bundled_binary_checksum_mismatch")
-            doctor, error = run_json([str(binary), "doctor", "--json", "--no-fetch"])
+            doctor, error = run_json([str(binary), "--json", "doctor", "--no-fetch"])
             if error:
                 failures.append("doctor_failed")
                 warnings.append(error)
@@ -131,4 +131,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

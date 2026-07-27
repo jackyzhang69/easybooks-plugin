@@ -29,6 +29,12 @@ jobs:
         run: |
           python3 -m py_compile scripts/assert_plugin_version.py plugin-metadata/scripts/verify-install
           python3 scripts/assert_plugin_version.py --root .
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("plugin-metadata/scripts/verify-install").read_text()
+          assert '[str(binary), "--json", "doctor", "--no-fetch"]' in source
+          assert '[str(binary), "doctor", "--json", "--no-fetch"]' not in source
+          PY
 
       - name: Cargo build (release)
         run: cargo build --release
