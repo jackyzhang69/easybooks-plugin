@@ -2,6 +2,13 @@
 
 All notable changes to the EasyBooks plugin (`easybooks-cli`) are recorded here.
 
+## 0.5.6 — 2026-07-27
+
+- Isolated upgrade discovery to EasyBooks' own immutable `plugin-v*` releases;
+  unrelated marketplace and product tags can no longer trigger false warnings.
+- Added a tag-source/filter matrix covering valid releases, unrelated tags,
+  prereleases, and malformed names.
+
 ## 0.5.5 — 2026-07-27
 
 - Corrected every agent-facing `doctor` example so the top-level `--json` flag

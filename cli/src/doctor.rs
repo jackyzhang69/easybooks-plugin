@@ -156,10 +156,13 @@ fn backend_probe(cfg: Option<&Config>) -> serde_json::Value {
     serde_json::json!({ "reachable": true, "status": "ok" })
 }
 
-/// Hit the GitHub Tags API for the marketplace repo and find the highest
-/// semver. 5-second timeout; failure is non-fatal and reported in-band.
+/// Hit the EasyBooks source release Tags API and find the highest immutable
+/// `plugin-v<semver>` release. The shared marketplace also contains unrelated
+/// product tags, so it must never be used as this product's version authority.
+/// 5-second timeout; failure is non-fatal and reported in-band.
 fn check_marketplace_upgrade(self_version: &str) -> serde_json::Value {
-    const TAGS_URL: &str = "https://api.github.com/repos/jackyzhang69/plugins/tags?per_page=100";
+    const TAGS_URL: &str =
+        "https://api.github.com/repos/jackyzhang69/easybooks-plugin/tags?per_page=100";
     let client = match reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(5))
         .user_agent(concat!("easybooks-cli/", env!("CARGO_PKG_VERSION")))
@@ -211,20 +214,13 @@ fn check_marketplace_upgrade(self_version: &str) -> serde_json::Value {
             })
         }
     };
-    let mut versions: Vec<(Vec<u32>, String)> = arr
-        .iter()
-        .filter_map(|t| t.get("name").and_then(|v| v.as_str()))
-        .map(|n| n.trim_start_matches('v').to_string())
-        .filter_map(|n| bootstrap::resolve::parse_strict_semver(&n).map(|p| (p, n)))
-        .collect();
-    versions.sort_by(|a, b| a.0.cmp(&b.0));
-    let latest = match versions.last() {
-        Some((_, n)) => n.clone(),
+    let latest = match latest_easybooks_plugin_version(arr) {
+        Some(version) => version,
         None => {
             return serde_json::json!({
                 "checked": false,
                 "upgrade_available": false,
-                "check_failed_reason": "no semver-shaped tags found in response",
+                "check_failed_reason": "no EasyBooks plugin-v<semver> tags found in response",
             })
         }
     };
@@ -237,4 +233,45 @@ fn check_marketplace_upgrade(self_version: &str) -> serde_json::Value {
         "latest": latest,
         "upgrade_available": available,
     })
+}
+
+fn latest_easybooks_plugin_version(tags: &[serde_json::Value]) -> Option<String> {
+    let mut versions: Vec<(Vec<u32>, String)> = tags
+        .iter()
+        .filter_map(|t| t.get("name").and_then(|v| v.as_str()))
+        .filter_map(|name| name.strip_prefix("plugin-v"))
+        .map(str::to_string)
+        .filter_map(|n| bootstrap::resolve::parse_strict_semver(&n).map(|p| (p, n)))
+        .collect();
+    versions.sort_by(|a, b| a.0.cmp(&b.0));
+    versions.pop().map(|(_, version)| version)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::latest_easybooks_plugin_version;
+    use serde_json::json;
+
+    #[test]
+    fn upgrade_tag_matrix_isolates_easybooks_releases() {
+        let tags = json!([
+            {"name": "v1.5.21"},
+            {"name": "desktop-v2.1.20"},
+            {"name": "plugin-v0.5.4"},
+            {"name": "plugin-v0.5.6"},
+            {"name": "plugin-v0.5.5"},
+            {"name": "plugin-v0.5.7-rc1"},
+            {"name": "plugin-vjunk"}
+        ]);
+        assert_eq!(
+            latest_easybooks_plugin_version(tags.as_array().unwrap()),
+            Some("0.5.6".to_string())
+        );
+    }
+
+    #[test]
+    fn upgrade_tag_matrix_rejects_unrelated_tags() {
+        let tags = json!([{"name": "v9.9.9"}, {"name": "plugin-v0.5.7-rc1"}]);
+        assert_eq!(latest_easybooks_plugin_version(tags.as_array().unwrap()), None);
+    }
 }
