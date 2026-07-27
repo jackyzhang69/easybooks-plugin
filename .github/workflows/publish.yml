@@ -12,17 +12,17 @@ concurrency:
 
 jobs:
   build-sign:
-    runs-on: [self-hosted, macOS, ARM64, easybooks-plugin-69]
+    runs-on: [self-hosted, macOS, ARM64, easybooks-plugin-signing]
     permissions:
       contents: write
     env:
       VERSION: ${{ github.ref_name }}
       STAGE: /tmp/easybooks-plugin-build-stage
       IS_TAG: ${{ github.event_name == 'push' }}
-      CODESIGN_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
+      CODESIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      APPLE_NOTARIZE_PASS: ${{ secrets.APPLE_NOTARIZE_PASS }}
+      APPLE_NOTARIZE_PASS: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5

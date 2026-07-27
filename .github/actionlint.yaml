@@ -1,4 +1,4 @@
 self-hosted-runner:
   labels:
-    - easybooks-plugin-69
+    - easybooks-plugin-signing
 config-variables: null
