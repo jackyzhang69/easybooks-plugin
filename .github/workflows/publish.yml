@@ -35,7 +35,10 @@ jobs:
 
       - name: Verify tag and source version
         if: env.IS_TAG == 'true'
-        run: python3 scripts/assert_plugin_version.py --tag "$VERSION" --root .
+        run: |
+          set -euo pipefail
+          bash scripts/assert-plugin-version-bumped.sh
+          python3 scripts/assert_plugin_version.py --tag "$VERSION" --root .
 
       - name: Verify source
         run: |
