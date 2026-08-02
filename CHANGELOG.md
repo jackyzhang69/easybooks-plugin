@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.9 — 2026-08-02
+
+- Owner `jz_` is sent directly for product HTTP and Tell-Jacky (no required exchange).
+- Aligns with portal one-connect auth governance.
+
 ## 0.5.8 — 2026-08-02
 
 - Build fix: silence dead_code under release `-D warnings`.
