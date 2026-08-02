@@ -107,11 +107,7 @@ fn backend_probe(cfg: Option<&Config>) -> serde_json::Value {
             "hint": "run `easybooks login --token-stdin` first",
         });
     };
-    let client = match reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .user_agent(concat!("easybooks-cli/", env!("CARGO_PKG_VERSION")))
-        .build()
-    {
+    let client = match crate::client::ApiClient::from_config(cfg) {
         Ok(c) => c,
         Err(e) => {
             return serde_json::json!({
@@ -121,45 +117,34 @@ fn backend_probe(cfg: Option<&Config>) -> serde_json::Value {
             })
         }
     };
-    let url = format!(
-        "{}/api/integrations/whoami",
-        cfg.base_url.trim_end_matches('/')
-    );
-    let req = client
-        .get(&url)
-        .header("Authorization", format!("Bearer {}", cfg.api_key))
-        .header("Accept", "application/json");
-    let resp = match req.send() {
-        Ok(r) => r,
+    match client.get("/api/integrations/whoami", vec![]) {
+        Ok(body) => serde_json::json!({
+            "reachable": true,
+            "status": "ok",
+            "auth_kind": format!("{:?}", cfg.auth_kind),
+            "whoami": body,
+        }),
         Err(e) => {
-            return serde_json::json!({
-                "reachable": false,
-                "status": "unreachable",
-                "hint": format!("network error: {}", e),
-            })
+            let msg = format!("{e:#}");
+            let lower = msg.to_lowercase();
+            if lower.contains("401") || lower.contains("unauthorized") || lower.contains("403") {
+                serde_json::json!({
+                    "reachable": true,
+                    "status": "unauthorized",
+                    "hint": "token rejected; re-run easybooks login --token-stdin",
+                })
+            } else {
+                serde_json::json!({
+                    "reachable": false,
+                    "status": "error",
+                    "hint": msg,
+                })
+            }
         }
-    };
-    let status = resp.status();
-    if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-        return serde_json::json!({
-            "reachable": true,
-            "status": "unauthorized",
-            "hint": "API key rejected — re-run `easybooks login --token-stdin`",
-        });
     }
-    if !status.is_success() {
-        return serde_json::json!({
-            "reachable": true,
-            "status": format!("http_{}", status.as_u16()),
-        });
-    }
-    serde_json::json!({ "reachable": true, "status": "ok" })
 }
 
-/// Hit the EasyBooks source release Tags API and find the highest immutable
-/// `plugin-v<semver>` release. The shared marketplace also contains unrelated
-/// product tags, so it must never be used as this product's version authority.
-/// 5-second timeout; failure is non-fatal and reported in-band.
+
 fn check_marketplace_upgrade(self_version: &str) -> serde_json::Value {
     const TAGS_URL: &str =
         "https://api.github.com/repos/jackyzhang69/easybooks-plugin/tags?per_page=100";

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.7 — 2026-08-02
+
+- Portal-first auth: `easybooks login --token-stdin` accepts owner `jz_` into
+  `~/.jackyzhang.app/token/jz.json`; legacy `eb_live_` keys still work.
+- Product HTTP exchanges `aud=eb` and sends the short-lived app JWT (memory only).
+- Tell Jacky: `easybooks feedback create|status` → accountd `product_feedback`
+  for plugin_id `easybooks`; new public skill `tell-jacky`.
+
 All notable changes to the EasyBooks plugin (`easybooks-cli`) are recorded here.
 
 ## 0.5.6 — 2026-07-27

@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{env, fs, io::Write, path::PathBuf};
 
@@ -12,111 +12,192 @@ use std::{env, fs, io::Write, path::PathBuf};
 /// skills warn before any production write.
 pub const DEFAULT_BASE_URL: &str = "https://easybooks.jackyzhang.app";
 
-/// On-disk shape of `~/.easybooks/config.json`. The `api_key` is the user's
-/// personal EasyBooks API key (`eb_live_...`), sent as `Authorization: Bearer
-/// <api_key>` on every request. It both authenticates AND identifies the user —
-/// there is no separate owner id. It is NEVER printed — see `mask_key`.
+/// Portal account service (accountd) origin for owner-token exchange + Tell-Jacky.
+pub const DEFAULT_ACCOUNTD_URL: &str = "https://account.jackyzhang.app";
+
+/// Exchange audience for EasyBooks product APIs (catalog_id easybooks ↔ aud eb).
+pub const ACCOUNTD_AUDIENCE: &str = "eb";
+
+/// Tell-Jacky path product id (not the exchange aud).
+pub const TELL_JACKY_PRODUCT: &str = "easybooks";
+
+/// On-disk shape of `~/.easybooks/config.json`.
+///
+/// - Legacy: `api_key` is `eb_live_...`.
+/// - Portal: `api_key` may be empty/absent; owner credential lives once at
+///   `~/.jackyzhang.app/token/jz.json`. Runtime data stays under `~/.easybooks/`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Config {
-    pub api_key: String,
+pub struct ConfigFile {
+    #[serde(default)]
+    pub api_key: Option<String>,
     pub base_url: String,
 }
 
+/// Resolved runtime config.
+#[derive(Debug, Clone)]
+pub struct Config {
+    /// Bearer secret after resolution: either `eb_live_...` or portal `jz_...`
+    /// (exchange happens in the HTTP client, not here).
+    pub credential: String,
+    pub base_url: String,
+    pub auth_kind: AuthKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthKind {
+    /// Legacy personal EasyBooks API key.
+    ApiKey,
+    /// Portal owner token (`jz_`); product calls must exchange aud=eb first.
+    PortalOwner,
+}
+
 impl Config {
-    /// Resolve effective config. Precedence for each field:
-    ///   api_key:  $EASYBOOKS_API_KEY env → config file
-    ///   base_url: --base-url arg → $EASYBOOKS_API_URL env → config file → DEFAULT
-    ///             (DEFAULT is PROD: https://easybooks.jackyzhang.app)
-    /// If no api_key can be resolved anywhere, this is a hard "not logged in"
-    /// error pointing the user at `easybooks login`.
+    /// Resolve effective config.
+    ///
+    /// Credential precedence:
+    ///   1. `$EASYBOOKS_API_KEY` (legacy or jz_)
+    ///   2. `~/.easybooks/config.json` api_key when non-empty
+    ///   3. `~/.jackyzhang.app/token/jz.json` portal owner token
+    ///
+    /// base_url: `--base-url` → `$EASYBOOKS_API_URL` → config file → DEFAULT
     pub fn load(base_url_arg: Option<String>) -> Result<Self> {
         let file = read_config_file()?;
-
-        let api_key = env::var("EASYBOOKS_API_KEY")
-            .ok()
-            .or_else(|| file.as_ref().map(|c| c.api_key.clone()))
-            .filter(|k| !k.is_empty())
-            .with_context(|| {
-                format!(
-                    "not logged in: run 'easybooks login --token-stdin' (config: {})",
-                    config_path().unwrap_or_else(|_| "~/.easybooks/config.json".into())
-                )
-            })?;
-
         let base_url = resolve_base_url(base_url_arg, file.as_ref().map(|c| c.base_url.clone()));
 
-        Ok(Self { api_key, base_url })
+        if let Ok(env_key) = env::var("EASYBOOKS_API_KEY") {
+            let env_key = env_key.trim().to_string();
+            if !env_key.is_empty() {
+                return Ok(Self::from_credential(env_key, base_url)?);
+            }
+        }
+
+        if let Some(file) = file.as_ref() {
+            if let Some(key) = file.api_key.as_ref() {
+                let key = key.trim();
+                if !key.is_empty() {
+                    return Ok(Self::from_credential(key.to_string(), base_url)?);
+                }
+            }
+        }
+
+        if let Some(portal) = read_portal_owner_token()? {
+            return Ok(Self {
+                credential: portal,
+                base_url,
+                auth_kind: AuthKind::PortalOwner,
+            });
+        }
+
+        bail!(
+            "not logged in: run 'easybooks login --token-stdin' with a portal owner token (jz_) or legacy eb_live_ key (config: {})",
+            config_path().unwrap_or_else(|_| "~/.easybooks/config.json".into())
+        )
     }
 
-    /// Masked form of the key, safe to print anywhere: `eb_***`.
+    fn from_credential(credential: String, base_url: String) -> Result<Self> {
+        let auth_kind = if credential.starts_with("jz_") {
+            AuthKind::PortalOwner
+        } else {
+            AuthKind::ApiKey
+        };
+        Ok(Self {
+            credential,
+            base_url,
+            auth_kind,
+        })
+    }
+
+    /// Backward-compatible accessor used by existing call sites.
+    pub fn api_key(&self) -> &str {
+        &self.credential
+    }
+
+    /// Masked form safe to print.
     pub fn api_key_masked(&self) -> String {
-        mask_key(&self.api_key)
+        mask_key(&self.credential)
     }
 }
 
-/// Resolve the effective `base_url` per the documented precedence (contract §6):
-///   --base-url arg → $EASYBOOKS_API_URL env → file/config fallback → DEFAULT (PROD).
-///
-/// `file_fallback` is the config-file tier (`Config::load` passes the persisted
-/// base_url; `login` passes `None` because it is *writing* the config and must
-/// not read its own stale value back). Empty strings are treated as unset so a
-/// blank arg/env/file never wins over a real later tier.
-pub fn resolve_base_url(base_url_arg: Option<String>, file_fallback: Option<String>) -> String {
+/// Resolve the effective `base_url` precedence used by both `Config::load` and
+/// `login_from_stdin`.
+pub fn resolve_base_url(base_url_arg: Option<String>, file_base_url: Option<String>) -> String {
     base_url_arg
-        .or_else(|| env::var("EASYBOOKS_API_URL").ok())
-        .or(file_fallback)
-        .filter(|u| !u.is_empty())
+        .filter(|u| !u.trim().is_empty())
+        .or_else(|| env::var("EASYBOOKS_API_URL").ok().filter(|u| !u.trim().is_empty()))
+        .or(file_base_url)
+        .filter(|u| !u.trim().is_empty())
         .unwrap_or_else(|| DEFAULT_BASE_URL.to_string())
 }
 
-/// Mask the API key as `eb_***`. The full value is never emitted in any output
-/// (contract §2). We deliberately reveal NOTHING beyond the brand prefix.
-pub fn mask_key(_key: &str) -> String {
-    "eb_***".to_string()
+pub fn resolve_accountd_url() -> String {
+    env::var("EASYBOOKS_ACCOUNTD_URL")
+        .ok()
+        .filter(|u| !u.trim().is_empty())
+        .or_else(|| env::var("ANYPDF_ACCOUNTD_ORIGIN").ok().filter(|u| !u.trim().is_empty()))
+        .unwrap_or_else(|| DEFAULT_ACCOUNTD_URL.to_string())
+        .trim_end_matches('/')
+        .to_string()
 }
 
-fn read_config_file() -> Result<Option<Config>> {
-    let path = config_path()?;
-    if let Ok(metadata) = fs::symlink_metadata(&path) {
-        if metadata.file_type().is_symlink() || !metadata.is_file() {
-            anyhow::bail!("config path is not a regular file: {}", path);
-        }
-    }
-    match fs::read_to_string(&path) {
-        Ok(data) => {
-            let cfg: Config = serde_json::from_str(&data)
-                .with_context(|| format!("invalid config JSON at {}", path))?;
-            Ok(Some(cfg))
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(e).with_context(|| format!("reading config at {}", path)),
-    }
-}
-
-/// Path to `~/.easybooks/config.json` as a display string.
 pub fn config_path() -> Result<String> {
-    Ok(config_path_buf()?.to_string_lossy().to_string())
+    Ok(config_file_path()?.display().to_string())
 }
 
 pub fn config_path_buf() -> Result<PathBuf> {
-    let mut path =
-        dirs::home_dir().ok_or_else(|| anyhow::anyhow!("could not determine home directory"))?;
-    path.push(".easybooks");
-    path.push("config.json");
-    Ok(path)
+    config_file_path()
 }
 
-/// Persist config to `~/.easybooks/config.json` with mode 0600 on unix.
-/// Creates the parent dir (also 0700 on unix) if missing.
-pub fn save(api_key: &str, base_url: &str) -> Result<()> {
-    let path = config_path_buf()?;
+fn config_file_path() -> Result<PathBuf> {
+    let home = dirs::home_dir().context("HOME is not set")?;
+    Ok(home.join(".easybooks").join("config.json"))
+}
+
+fn portal_token_path() -> Result<PathBuf> {
+    let home = dirs::home_dir().context("HOME is not set")?;
+    Ok(home.join(".jackyzhang.app").join("token").join("jz.json"))
+}
+
+fn read_config_file() -> Result<Option<ConfigFile>> {
+    let path = config_file_path()?;
+    match fs::symlink_metadata(&path) {
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink() || !metadata.is_file() {
+                bail!("config path is not a regular file: {}", path.display());
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e).with_context(|| format!("stat {}", path.display())),
+    }
+    let raw = fs::read_to_string(&path)
+        .with_context(|| format!("reading {}", path.display()))?;
+    // Backward compat: old shape had required string api_key.
+    if let Ok(file) = serde_json::from_str::<ConfigFile>(&raw) {
+        return Ok(Some(file));
+    }
+    #[derive(Deserialize)]
+    struct Legacy {
+        api_key: String,
+        base_url: String,
+    }
+    let legacy: Legacy = serde_json::from_str(&raw)
+        .with_context(|| format!("parsing {}", path.display()))?;
+    Ok(Some(ConfigFile {
+        api_key: Some(legacy.api_key),
+        base_url: legacy.base_url,
+    }))
+}
+
+/// Persist product-local runtime config (base_url ± legacy api_key). Never stores
+/// portal owner tokens here.
+pub fn save_config(api_key: Option<&str>, base_url: &str) -> Result<()> {
+    let path = config_file_path()?;
     if let Some(parent) = path.parent() {
         if let Ok(metadata) = fs::symlink_metadata(parent) {
             if metadata.file_type().is_symlink() || !metadata.is_dir() {
-                anyhow::bail!("config directory is not a real directory: {}", parent.display());
+                bail!("config directory is not a real directory: {}", parent.display());
             }
         } else {
-            fs::create_dir_all(parent)?;
+            fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
         }
         #[cfg(unix)]
         {
@@ -124,50 +205,126 @@ pub fn save(api_key: &str, base_url: &str) -> Result<()> {
             let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
         }
     }
-    let cfg = Config {
-        api_key: api_key.to_string(),
-        base_url: base_url.to_string(),
-    };
-    let data = serde_json::to_vec_pretty(&cfg)?;
     if let Ok(metadata) = fs::symlink_metadata(&path) {
         if metadata.file_type().is_symlink() || !metadata.is_file() {
-            anyhow::bail!("config path is not a regular file: {}", path.display());
+            bail!("config path is not a regular file: {}", path.display());
         }
     }
-    let temporary = path.with_file_name(format!(
-        ".config.json.{}.tmp",
-        std::process::id()
-    ));
-    if temporary.exists() {
-        anyhow::bail!("temporary config path already exists");
+    let file = ConfigFile {
+        api_key: api_key
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string()),
+        base_url: base_url.trim().to_string(),
+    };
+    let body = serde_json::to_vec_pretty(&file).context("serializing config")?;
+    atomic_write(&path, &body, 0o600)?;
+    Ok(())
+}
+
+/// Legacy helper used by older call sites: save eb_live_ key + base_url.
+pub fn save(api_key: &str, base_url: &str) -> Result<()> {
+    if api_key.starts_with("jz_") {
+        save_portal_owner_token(api_key)?;
+        // Keep base_url only under ~/.easybooks; owner token is shared.
+        return save_config(None, base_url);
     }
-    let write_result = (|| -> Result<()> {
-        let mut options = fs::OpenOptions::new();
-        options.write(true).create_new(true);
+    save_config(Some(api_key), base_url)
+}
+
+pub fn save_portal_owner_token(token: &str) -> Result<()> {
+    let token = token.trim();
+    if !token.starts_with("jz_") || token.chars().any(char::is_whitespace) {
+        bail!("portal owner token must be a single jz_ value");
+    }
+    let path = portal_token_path()?;
+    if let Some(parent) = path.parent() {
+        if let Ok(metadata) = fs::symlink_metadata(parent) {
+            if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                bail!("portal token directory is not a real directory: {}", parent.display());
+            }
+        } else {
+            fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+        }
         #[cfg(unix)]
         {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
+            if let Some(root) = parent.parent() {
+                let _ = fs::set_permissions(root, fs::Permissions::from_mode(0o700));
+            }
         }
-        let mut file = options
-            .open(&temporary)
-            .with_context(|| format!("creating temporary config beside {}", path.display()))?;
-        file.write_all(&data)
-            .context("writing temporary EasyBooks config")?;
-        file.sync_all().context("syncing temporary EasyBooks config")?;
-        fs::rename(&temporary, &path)
-            .with_context(|| format!("replacing config at {}", path.display()))?;
-        Ok(())
-    })();
-    if write_result.is_err() {
-        let _ = fs::remove_file(&temporary);
     }
-    write_result?;
+    if let Ok(metadata) = fs::symlink_metadata(&path) {
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            bail!("portal token path is not a regular file: {}", path.display());
+        }
+    }
+    let body = serde_json::to_vec(&serde_json::json!({ "token": token }))
+        .context("serializing portal token")?;
+    atomic_write(&path, &body, 0o600)?;
+    Ok(())
+}
+
+pub fn read_portal_owner_token() -> Result<Option<String>> {
+    let path = portal_token_path()?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let raw = fs::read_to_string(&path)
+        .with_context(|| format!("reading {}", path.display()))?;
+    let value: serde_json::Value =
+        serde_json::from_str(&raw).with_context(|| format!("parsing {}", path.display()))?;
+    let token = value
+        .get("token")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| s.starts_with("jz_") && !s.is_empty())
+        .map(|s| s.to_string());
+    Ok(token)
+}
+
+fn atomic_write(path: &PathBuf, body: &[u8], mode: u32) -> Result<()> {
+    let parent = path
+        .parent()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let tmp = parent.join(format!(
+        ".{}.tmp-{}",
+        path.file_name().and_then(|s| s.to_str()).unwrap_or("cfg"),
+        std::process::id()
+    ));
+    {
+        let mut file = fs::File::create(&tmp)
+            .with_context(|| format!("creating temp file {}", tmp.display()))?;
+        file.write_all(body)
+            .and_then(|_| file.flush())
+            .context("writing temp config")?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&tmp, fs::Permissions::from_mode(mode))
+                .context("setting temp permissions")?;
+        }
+    }
+    fs::rename(&tmp, path).with_context(|| format!("persisting {}", path.display()))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
-            .with_context(|| format!("setting 0600 on {}", path.display()))?;
+        let _ = fs::set_permissions(path, fs::Permissions::from_mode(mode));
     }
     Ok(())
+}
+
+pub fn mask_key(key: &str) -> String {
+    if key.starts_with("jz_") {
+        return "jz_***".to_string();
+    }
+    if key.starts_with("eb_") {
+        return "eb_***".to_string();
+    }
+    if key.len() <= 4 {
+        return "***".to_string();
+    }
+    format!("{}***", &key[..key.len().min(3)])
 }

@@ -64,6 +64,47 @@ enum Command {
     Rules(RulesCommand),
     /// Dashboard stats summary.
     Dashboard(DashboardCommand),
+    /// Tell Jacky — submit/inspect product feedback via portal accountd.
+    Feedback(FeedbackCommand),
+}
+
+#[derive(Args)]
+struct FeedbackCommand {
+    #[command(subcommand)]
+    command: FeedbackSubcommand,
+}
+
+#[derive(Subcommand)]
+enum FeedbackSubcommand {
+    /// Submit a Tell-Jacky report (requires portal jz_ token).
+    Create(FeedbackCreateArgs),
+    /// Fetch one report by id.
+    Status(FeedbackStatusArgs),
+}
+
+#[derive(Args)]
+struct FeedbackCreateArgs {
+    /// Short title (<=200 chars).
+    #[arg(long)]
+    title: String,
+    /// Description body.
+    #[arg(long)]
+    description: String,
+    /// feature-request | bug-report | knowledge-tip
+    #[arg(long, default_value = "bug-report")]
+    kind: String,
+    /// Required idempotency key for safe retries.
+    #[arg(long)]
+    idempotency_key: String,
+    /// Explicit user confirmation gate (skills must pass this).
+    #[arg(long)]
+    user_confirmed: bool,
+}
+
+#[derive(Args)]
+struct FeedbackStatusArgs {
+    #[arg(long)]
+    report_id: String,
 }
 
 #[derive(Args)]
@@ -543,7 +584,7 @@ fn run() -> Result<()> {
 /// talks to the backend. Split out so `run` can short-circuit `login`/`doctor`.
 fn dispatch(command: Command, base_url_arg: Option<String>) -> Result<()> {
     let config = config::Config::load(base_url_arg)?;
-    let client = client::ApiClient::new(config.base_url.clone(), config.api_key.clone())?;
+    let client = client::ApiClient::from_config(&config)?;
 
     match command {
         Command::Login(_) | Command::Doctor(_) => unreachable!(),
@@ -696,6 +737,17 @@ fn dispatch(command: Command, base_url_arg: Option<String>) -> Result<()> {
             ),
         },
         Command::Dashboard(cmd) => dashboard::stats(&client, cmd.year),
+        Command::Feedback(cmd) => match cmd.command {
+            FeedbackSubcommand::Create(args) => commands::feedback::create(
+                &client,
+                &args.title,
+                &args.description,
+                &args.kind,
+                &args.idempotency_key,
+                args.user_confirmed,
+            ),
+            FeedbackSubcommand::Status(args) => commands::feedback::status(&client, &args.report_id),
+        },
     }
 }
 
