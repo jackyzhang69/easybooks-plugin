@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.8 — 2026-08-02
+
+- Build fix: silence dead_code under release `-D warnings`.
+
 ## 0.5.7 — 2026-08-02
 
 - Portal-first auth: `easybooks login --token-stdin` accepts owner `jz_` into
