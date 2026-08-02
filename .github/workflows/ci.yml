@@ -7,6 +7,15 @@ on:
     branches: [main]
 
 jobs:
+  plugin-version-gate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+      - name: Require version bump when plugin paths change
+        run: bash scripts/assert-plugin-version-bumped.sh
+
   test:
     # CI is credential-free and must not depend on a repository-scoped signing
     # runner being online. The tag release remains pinned to the dedicated 69
