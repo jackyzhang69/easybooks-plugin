@@ -67,7 +67,7 @@ impl Config {
         if let Ok(env_key) = env::var("EASYBOOKS_API_KEY") {
             let env_key = env_key.trim().to_string();
             if !env_key.is_empty() {
-                return Ok(Self::from_credential(env_key, base_url)?);
+                return Self::from_credential(env_key, base_url);
             }
         }
 
@@ -75,7 +75,7 @@ impl Config {
             if let Some(key) = file.api_key.as_ref() {
                 let key = key.trim();
                 if !key.is_empty() {
-                    return Ok(Self::from_credential(key.to_string(), base_url)?);
+                    return Self::from_credential(key.to_string(), base_url);
                 }
             }
         }
