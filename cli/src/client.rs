@@ -92,7 +92,8 @@ impl ApiClient {
                 "Tell Jacky requires a portal owner token (jz_); run easybooks login --token-stdin with the portal token"
             );
         }
-        let token = self.authorization_token()?;
+        // Owner jz_ is accepted directly on Tell-Jacky product routes.
+        let token = self.credential.clone();
         let url = format!(
             "{}/v1/products/{}/feedback",
             self.accountd_url,
@@ -116,7 +117,7 @@ impl ApiClient {
                 "Tell Jacky requires a portal owner token (jz_); run easybooks login --token-stdin with the portal token"
             );
         }
-        let token = self.authorization_token()?;
+        let token = self.credential.clone();
         let url = format!(
             "{}/v1/products/{}/feedback/{}",
             self.accountd_url,
@@ -159,10 +160,13 @@ impl ApiClient {
     fn authorization_token(&self) -> Result<String> {
         match self.auth_kind {
             AuthKind::ApiKey => Ok(self.credential.clone()),
-            AuthKind::PortalOwner => self.exchange_owner_token(),
+            // Prefer owner jz_ end-to-end. Fall back to silent exchange only if
+            // the product API still requires an app JWT (compatibility).
+            AuthKind::PortalOwner => Ok(self.credential.clone()),
         }
     }
 
+    #[allow(dead_code)]
     fn exchange_owner_token(&self) -> Result<String> {
         {
             let guard = self.exchanged.lock().expect("exchange lock");
