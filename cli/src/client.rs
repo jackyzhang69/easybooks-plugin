@@ -36,6 +36,7 @@ impl ApiClient {
         )
     }
 
+    #[allow(dead_code)]
     pub fn new(base_url: String, api_key: String) -> Result<Self> {
         let auth_kind = if api_key.starts_with("jz_") {
             AuthKind::PortalOwner
