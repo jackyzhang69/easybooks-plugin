@@ -108,6 +108,7 @@ impl Config {
     }
 
     /// Backward-compatible accessor used by existing call sites.
+    #[allow(dead_code)]
     pub fn api_key(&self) -> &str {
         &self.credential
     }
