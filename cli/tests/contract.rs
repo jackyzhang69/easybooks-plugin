@@ -19,8 +19,8 @@ fn easybooks() -> Command {
     Command::cargo_bin("easybooks").expect("easybooks binary")
 }
 
-const KEY: &str = "eb_live_test_key";
-const BEARER: &str = "Bearer eb_live_test_key";
+const KEY: &str = "jz_test_key_for_contract";
+const BEARER: &str = "Bearer jz_test_key_for_contract";
 const USER: &str = "11111111-1111-1111-1111-111111111111";
 
 #[test]
@@ -264,16 +264,22 @@ fn login_writes_config_and_masks_key() {
     easybooks()
         .env("HOME", home.path())
         .args(["login", "--token-stdin", "--base-url", "http://192.168.1.69:8310"])
-        .write_stdin("eb_live_super_secret_value\n")
+        .write_stdin("jz_super_secret_value\n")
         .assert()
         .success()
-        .stdout(predicate::str::contains(r#""api_key_masked": "eb_***""#))
+        .stdout(predicate::str::contains(r#""api_key_masked": "jz_***""#))
         // The raw secret must NEVER appear in output.
-        .stdout(predicate::str::contains("eb_live_super_secret_value").not());
+        .stdout(predicate::str::contains("jz_super_secret_value").not());
 
-    // Config file exists and contains the key (on disk only).
+    // Shared user slot holds the token; product runtime config has base_url only.
+    let slot = home.path().join(".jackyzhang.app").join("token").join("user.json");
+    assert!(slot.is_file(), "shared user.json should be written");
+    let slot_raw = std::fs::read_to_string(&slot).expect("read user.json");
+    assert!(slot_raw.contains("jz_super_secret_value"));
     let cfg = home.path().join(".easybooks").join("config.json");
-    assert!(cfg.is_file(), "config.json should be written");
+    assert!(cfg.is_file(), "runtime config.json should be written");
+    let cfg_raw = std::fs::read_to_string(&cfg).expect("read runtime config");
+    assert!(!cfg_raw.contains("jz_super_secret_value"), "token must not live in product config");
 
     #[cfg(unix)]
     {
@@ -286,14 +292,16 @@ fn login_writes_config_and_masks_key() {
             .mode()
             & 0o777;
         assert_eq!(directory_mode, 0o700, ".easybooks must be mode 0700");
+        let slot_mode = std::fs::metadata(&slot).unwrap().permissions().mode() & 0o777;
+        assert_eq!(slot_mode, 0o600, "user.json must be mode 0600");
     }
 }
 
 #[test]
 fn login_rejects_token_argument() {
     for arguments in [
-        vec!["login", "--token", "eb_live_must_not_enter_argv"],
-        vec!["login", "--token=eb_live_must_not_enter_argv"],
+        vec!["login", "--token", "jz_must_not_enter_argv"],
+        vec!["login", "--token=jz_must_not_enter_argv"],
     ] {
         let home = tempfile::tempdir().expect("tempdir");
         easybooks()
@@ -301,8 +309,8 @@ fn login_rejects_token_argument() {
             .args(arguments)
             .assert()
             .failure()
-            .stdout(predicate::str::contains("eb_live_must_not_enter_argv").not())
-            .stderr(predicate::str::contains("eb_live_must_not_enter_argv").not());
+            .stdout(predicate::str::contains("jz_must_not_enter_argv").not())
+            .stderr(predicate::str::contains("jz_must_not_enter_argv").not());
     }
 }
 
@@ -310,9 +318,9 @@ fn login_rejects_token_argument() {
 fn login_rejects_empty_or_multiline_stdin() {
     for input in [
         "\n",
-        "eb_live_first\neb_live_second\n",
-        "eb_live_extra_blank\n\n",
-        " eb_live_leading_space\n",
+        "jz_first\njz_second\n",
+        "jz_extra_blank\n\n",
+        " jz_leading_space\n",
     ] {
         let home = tempfile::tempdir().expect("tempdir");
         easybooks()
@@ -321,8 +329,8 @@ fn login_rejects_empty_or_multiline_stdin() {
             .write_stdin(input)
             .assert()
             .failure()
-            .stdout(predicate::str::contains("eb_live_").not())
-            .stderr(predicate::str::contains("eb_live_").not());
+            .stdout(predicate::str::contains("jz_").not())
+            .stderr(predicate::str::contains("jz_").not());
         assert!(!home.path().join(".easybooks/config.json").exists());
     }
 }
@@ -339,11 +347,11 @@ fn login_rejects_symlinked_config_directory() {
     easybooks()
         .env("HOME", home.path())
         .args(["login", "--token-stdin"])
-        .write_stdin("eb_live_symlink_test\n")
+        .write_stdin("jz_symlink_test\n")
         .assert()
         .failure()
-        .stdout(predicate::str::contains("eb_live_symlink_test").not())
-        .stderr(predicate::str::contains("eb_live_symlink_test").not());
+        .stdout(predicate::str::contains("jz_symlink_test").not())
+        .stderr(predicate::str::contains("jz_symlink_test").not());
 
     assert!(!outside.path().join("config.json").exists());
 }
@@ -363,11 +371,11 @@ fn login_and_load_reject_symlinked_config_file() {
     easybooks()
         .env("HOME", home.path())
         .args(["login", "--token-stdin"])
-        .write_stdin("eb_live_symlink_file\n")
+        .write_stdin("jz_symlink_file\n")
         .assert()
         .failure()
-        .stdout(predicate::str::contains("eb_live_symlink_file").not())
-        .stderr(predicate::str::contains("eb_live_symlink_file").not());
+        .stdout(predicate::str::contains("jz_symlink_file").not())
+        .stderr(predicate::str::contains("jz_symlink_file").not());
     easybooks()
         .env("HOME", home.path())
         .arg("whoami")
@@ -418,7 +426,7 @@ fn login_uses_env_base_url_when_arg_absent() {
         .env("HOME", home.path())
         .env("EASYBOOKS_API_URL", TEST_URL)
         .args(["login", "--token-stdin"])
-        .write_stdin("eb_live_envonly\n")
+        .write_stdin("jz_envonly\n")
         .assert()
         .success()
         .stdout(predicate::str::contains(TEST_URL));
@@ -439,7 +447,7 @@ fn login_arg_overrides_env_base_url() {
         .env("HOME", home.path())
         .env("EASYBOOKS_API_URL", TEST_URL)
         .args(["login", "--token-stdin", "--base-url", arg_url])
-        .write_stdin("eb_live_argwins\n")
+        .write_stdin("jz_argwins\n")
         .assert()
         .success()
         .stdout(predicate::str::contains(arg_url));
@@ -460,7 +468,7 @@ fn login_defaults_to_prod_when_arg_and_env_absent() {
         .env("HOME", home.path())
         .env_remove("EASYBOOKS_API_URL")
         .args(["login", "--token-stdin"])
-        .write_stdin("eb_live_default\n")
+        .write_stdin("jz_default\n")
         .assert()
         .success()
         .stdout(predicate::str::contains(PROD_URL));
@@ -493,7 +501,7 @@ fn whoami_uses_integration_whoami_endpoint_and_reports_user_and_scope() {
         .success()
         .stdout(predicate::str::contains(USER))
         .stdout(predicate::str::contains(r#""scope": "read_write""#))
-        .stdout(predicate::str::contains(r#""api_key_masked": "eb_***""#));
+        .stdout(predicate::str::contains(r#""api_key_masked": "jz_***""#));
 
     mock.assert();
 }

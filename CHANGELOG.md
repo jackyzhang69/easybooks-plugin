@@ -1,3 +1,7 @@
+## 0.5.10
+
+- Unified platform `user.json` connect; load-time migrate legacy token paths; host-agent file/plaintext token delivery rules.
+
 # Changelog
 
 ## 0.5.9 — 2026-08-02

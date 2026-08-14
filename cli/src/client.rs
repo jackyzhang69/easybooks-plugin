@@ -9,9 +9,8 @@ use std::time::{Duration, Instant};
 
 /// HTTP client for EasyBooks backend integration endpoints + portal Tell-Jacky.
 ///
-/// Auth:
-/// - Legacy `eb_live_...` API key → Bearer directly to EasyBooks.
-/// - Portal owner `jz_...` → exchange aud=eb at accountd, Bearer app JWT (memory).
+/// Auth: platform owner `jz_...` from shared `token/user.json`.
+/// Product calls send the owner token (or an in-memory exchanged aud=eb JWT when needed).
 pub struct ApiClient {
     base_url: String,
     accountd_url: String,
@@ -38,12 +37,10 @@ impl ApiClient {
 
     #[allow(dead_code)]
     pub fn new(base_url: String, api_key: String) -> Result<Self> {
-        let auth_kind = if api_key.starts_with("jz_") {
-            AuthKind::PortalOwner
-        } else {
-            AuthKind::ApiKey
-        };
-        Self::new_with_timeout(base_url, api_key, auth_kind, Duration::from_secs(120))
+        if !api_key.starts_with("jz_") {
+            bail!("EasyBooks client requires a platform jz_ credential");
+        }
+        Self::new_with_timeout(base_url, api_key, AuthKind::PortalOwner, Duration::from_secs(120))
     }
 
     pub fn new_with_timeout(
@@ -159,9 +156,8 @@ impl ApiClient {
 
     fn authorization_token(&self) -> Result<String> {
         match self.auth_kind {
-            AuthKind::ApiKey => Ok(self.credential.clone()),
-            // Prefer owner jz_ end-to-end. Fall back to silent exchange only if
-            // the product API still requires an app JWT (compatibility).
+            // Prefer owner jz_ end-to-end. Exchange remains available for
+            // product APIs that still require an exact-audience app JWT.
             AuthKind::PortalOwner => Ok(self.credential.clone()),
         }
     }
