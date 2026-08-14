@@ -8,4 +8,5 @@ pub mod setup;
 pub mod transactions;
 pub mod tx_ops;
 pub mod tx_query;
+pub mod admin_feedback;
 pub mod feedback;

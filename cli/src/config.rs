@@ -260,6 +260,102 @@ pub fn save_portal_owner_token(token: &str) -> Result<()> {
     Ok(())
 }
 
+
+/// Shared durable admin slot for private admin feedback ops.
+pub fn admin_token_path() -> Result<PathBuf> {
+    if let Ok(override_home) = env::var("JACKYZHANG_APP_HOME") {
+        let override_home = override_home.trim();
+        if !override_home.is_empty() {
+            return Ok(PathBuf::from(override_home).join("token").join("admin.json"));
+        }
+    }
+    let home = dirs::home_dir().context("HOME is not set")?;
+    Ok(home.join(".jackyzhang.app").join("token").join("admin.json"))
+}
+
+pub fn read_admin_token() -> Result<Option<String>> {
+    let path = admin_token_path()?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    if let Ok(metadata) = fs::symlink_metadata(&path) {
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            bail!("admin token path is not a regular file: {}", path.display());
+        }
+    }
+    let raw = fs::read_to_string(&path)
+        .with_context(|| format!("reading {}", path.display()))?;
+    let value: serde_json::Value =
+        serde_json::from_str(&raw).with_context(|| format!("parsing {}", path.display()))?;
+    if let Some(kind) = value.get("credential_kind").and_then(|v| v.as_str()) {
+        if kind != "admin" {
+            return Ok(None);
+        }
+    }
+    if let Some(slot) = value.get("slot").and_then(|v| v.as_str()) {
+        if slot != "admin" {
+            return Ok(None);
+        }
+    }
+    let token = value
+        .get("token")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| s.starts_with("jz_") && !s.chars().any(char::is_whitespace) && !s.is_empty())
+        .map(|s| s.to_string());
+    Ok(token)
+}
+
+pub fn write_admin_token(token: &str) -> Result<()> {
+    let token = token.trim();
+    if !token.starts_with("jz_") || token.chars().any(char::is_whitespace) {
+        bail!("admin token must be a single jz_ value");
+    }
+    let path = admin_token_path()?;
+    // Reuse portal owner write path structure but force admin kind labels.
+    if let Some(parent) = path.parent() {
+        if let Ok(metadata) = fs::symlink_metadata(parent) {
+            if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                bail!("portal token directory is not a real directory: {}", parent.display());
+            }
+        } else {
+            fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
+            if let Some(root) = parent.parent() {
+                let _ = fs::set_permissions(root, fs::Permissions::from_mode(0o700));
+            }
+        }
+    }
+    if let Ok(metadata) = fs::symlink_metadata(&path) {
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            bail!("admin token path is not a regular file: {}", path.display());
+        }
+    }
+    let body = serde_json::to_vec(&serde_json::json!({
+        "token": token,
+        "credential_kind": "admin",
+        "slot": "admin",
+    }))
+    .context("serializing admin token")?;
+    atomic_write(&path, &body, 0o600)?;
+    Ok(())
+}
+
+#[allow(dead_code)]
+pub fn clear_admin_token() -> Result<()> {
+    let path = admin_token_path()?;
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e).with_context(|| format!("remove {}", path.display())),
+    }
+}
+
+
 pub fn read_portal_owner_token() -> Result<Option<String>> {
     if let Some(token) = read_token_file(&portal_token_path()?)? {
         return Ok(Some(token));

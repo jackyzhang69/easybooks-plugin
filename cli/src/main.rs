@@ -66,6 +66,84 @@ enum Command {
     Dashboard(DashboardCommand),
     /// Tell Jacky — submit/inspect product feedback via portal accountd.
     Feedback(FeedbackCommand),
+    /// Private operator surface (Tell Jacky admin feedback). Requires admin.json.
+    Admin(AdminCommand),
+}
+
+#[derive(Args)]
+struct AdminCommand {
+    #[command(subcommand)]
+    command: AdminSubcommand,
+}
+
+#[derive(Subcommand)]
+enum AdminSubcommand {
+    /// Install platform admin jz_ into ~/.jackyzhang.app/token/admin.json (stdin).
+    Login(AdminLoginArgs),
+    /// Tell Jacky admin feedback for plugin_id=easybooks
+    Feedback(AdminFeedbackCommand),
+}
+
+#[derive(Args)]
+struct AdminLoginArgs {
+    #[arg(long, help = "Read exactly one admin jz_ line from stdin")]
+    token_stdin: bool,
+}
+
+#[derive(Args)]
+struct AdminFeedbackCommand {
+    #[command(subcommand)]
+    command: AdminFeedbackSubcommand,
+}
+
+#[derive(Subcommand)]
+enum AdminFeedbackSubcommand {
+    List {
+        #[arg(long)]
+        status: Option<String>,
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    Get {
+        #[arg(long)]
+        id: String,
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    Triage {
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        message: String,
+        #[arg(long)]
+        request_key: String,
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    Close {
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        message: String,
+        #[arg(long)]
+        request_key: String,
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    DirectClose {
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        ack_message: String,
+        #[arg(long)]
+        resolution_message: String,
+        #[arg(long)]
+        request_key: String,
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
 }
 
 #[derive(Args)]
@@ -747,6 +825,48 @@ fn dispatch(command: Command, base_url_arg: Option<String>) -> Result<()> {
                 args.user_confirmed,
             ),
             FeedbackSubcommand::Status(args) => commands::feedback::status(&client, &args.report_id),
+        }
+
+        Command::Admin(cmd) => match cmd.command {
+            AdminSubcommand::Login(args) => {
+                if !args.token_stdin {
+                    anyhow::bail!("admin login requires --token-stdin");
+                }
+                commands::admin_feedback::login_admin_from_stdin()
+            }
+            AdminSubcommand::Feedback(fb) => match fb.command {
+                AdminFeedbackSubcommand::List { status, limit, json } => {
+                    commands::admin_feedback::list(status.as_deref(), limit, json)
+                }
+                AdminFeedbackSubcommand::Get { id, json } => {
+                    commands::admin_feedback::get(&id, json)
+                }
+                AdminFeedbackSubcommand::Triage {
+                    id,
+                    message,
+                    request_key,
+                    json,
+                } => commands::admin_feedback::triage(&id, &message, &request_key, json),
+                AdminFeedbackSubcommand::Close {
+                    id,
+                    message,
+                    request_key,
+                    json,
+                } => commands::admin_feedback::close(&id, &message, &request_key, json),
+                AdminFeedbackSubcommand::DirectClose {
+                    id,
+                    ack_message,
+                    resolution_message,
+                    request_key,
+                    json,
+                } => commands::admin_feedback::direct_close(
+                    &id,
+                    &ack_message,
+                    &resolution_message,
+                    &request_key,
+                    json,
+                ),
+            },
         },
     }
 }
