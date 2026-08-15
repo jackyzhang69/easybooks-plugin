@@ -1,3 +1,7 @@
+## 0.5.11
+
+- Publish latest main (admin feedback / auth hardening).
+
 ## 0.5.10
 
 - Unified platform `user.json` connect; load-time migrate legacy token paths; host-agent file/plaintext token delivery rules.
