@@ -101,6 +101,8 @@ enum AdminFeedbackSubcommand {
     List {
         #[arg(long)]
         status: Option<String>,
+        #[arg(long, conflicts_with = "status")]
+        all: bool,
         #[arg(long, default_value_t = 20)]
         limit: usize,
         #[arg(long, default_value_t = false)]
@@ -835,8 +837,13 @@ fn dispatch(command: Command, base_url_arg: Option<String>) -> Result<()> {
                 commands::admin_feedback::login_admin_from_stdin()
             }
             AdminSubcommand::Feedback(fb) => match fb.command {
-                AdminFeedbackSubcommand::List { status, limit, json } => {
-                    commands::admin_feedback::list(status.as_deref(), limit, json)
+                AdminFeedbackSubcommand::List {
+                    status,
+                    all,
+                    limit,
+                    json,
+                } => {
+                    commands::admin_feedback::list(status.as_deref(), all, limit, json)
                 }
                 AdminFeedbackSubcommand::Get { id, json } => {
                     commands::admin_feedback::get(&id, json)
@@ -884,6 +891,46 @@ fn _resolver_entrypoints() {
 mod tests {
     use super::Cli;
     use clap::Parser;
+
+    #[test]
+    fn admin_feedback_all_is_explicit_and_conflicts_with_status() {
+        let default = Cli::try_parse_from(["easybooks", "admin", "feedback", "list"])
+            .expect("default feedback list should parse");
+        match default.command {
+            super::Command::Admin(cmd) => match cmd.command {
+                super::AdminSubcommand::Feedback(feedback) => match feedback.command {
+                    super::AdminFeedbackSubcommand::List { all, .. } => assert!(!all),
+                    _ => panic!("expected feedback list"),
+                },
+                _ => panic!("expected admin feedback"),
+            },
+            _ => panic!("expected admin command"),
+        }
+
+        let all = Cli::try_parse_from(["easybooks", "admin", "feedback", "list", "--all"])
+            .expect("explicit all should parse");
+        match all.command {
+            super::Command::Admin(cmd) => match cmd.command {
+                super::AdminSubcommand::Feedback(feedback) => match feedback.command {
+                    super::AdminFeedbackSubcommand::List { all, .. } => assert!(all),
+                    _ => panic!("expected feedback list"),
+                },
+                _ => panic!("expected admin feedback"),
+            },
+            _ => panic!("expected admin command"),
+        }
+
+        assert!(Cli::try_parse_from([
+            "easybooks",
+            "admin",
+            "feedback",
+            "list",
+            "--all",
+            "--status",
+            "received",
+        ])
+        .is_err());
+    }
 
     #[test]
     fn parses_income_add() {

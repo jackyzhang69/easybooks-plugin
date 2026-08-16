@@ -180,13 +180,23 @@ fn print_list_human(text: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn list(status: Option<&str>, limit: usize, json_out: bool) -> Result<()> {
+fn effective_list_status(status: Option<&str>, all: bool) -> Option<&str> {
+    if all {
+        return None;
+    }
+    status
+        .map(str::trim)
+        .filter(|status| !status.is_empty())
+        .or(Some("received"))
+}
+
+pub fn list(status: Option<&str>, all: bool, limit: usize, json_out: bool) -> Result<()> {
     let mut s = load_admin_session()?;
     let mut path = format!(
         "/v1/admin/products/{PRODUCT}/feedback?limit={}",
         limit.max(1)
     );
-    if let Some(st) = status.map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(st) = effective_list_status(status, all) {
         path.push_str(&format!("&status={st}"));
     }
     let (code, text) = s.request("GET", &path, None)?;
@@ -336,4 +346,16 @@ pub fn login_admin_from_stdin() -> Result<()> {
         })
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::effective_list_status;
+
+    #[test]
+    fn list_defaults_received_and_all_is_explicit() {
+        assert_eq!(effective_list_status(None, false), Some("received"));
+        assert_eq!(effective_list_status(Some(" triaged "), false), Some("triaged"));
+        assert_eq!(effective_list_status(None, true), None);
+    }
 }
