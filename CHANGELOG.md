@@ -1,3 +1,11 @@
+## 0.5.13
+
+- `whoami` forwards optional backend `email` as display metadata.
+
+## 0.5.12
+
+- Bump published client to 0.5.12.
+
 ## 0.5.11
 
 - Publish latest main (admin feedback / auth hardening).
