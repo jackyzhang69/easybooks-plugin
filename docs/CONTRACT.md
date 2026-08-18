@@ -76,7 +76,7 @@ Commands:
   Output: `{"status":"ok","path":"~/.easybooks/config.json","base_url":"...","api_key_masked":"eb_***"}`.
 - `easybooks whoami`
   Calls `GET /api/integrations/whoami` (the key identifies the user). Output:
-  `{ base_url, user_id, scope, api_key_masked }` (user_id + scope come from the whoami response).
+  `{ base_url, user_id, email?, scope, api_key_masked }` (user_id, optional email, and scope come from the whoami response).
 - `easybooks doctor [--no-fetch] [--check-upgrade]`
   Local config check + backend round-trip + version. `--no-fetch` = pure local read (no network).
   `--check-upgrade` = one GitHub Tags API call (non-fatal). Output shape (mirror formbro doctor):

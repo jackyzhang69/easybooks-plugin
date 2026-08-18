@@ -489,7 +489,7 @@ fn whoami_uses_integration_whoami_endpoint_and_reports_user_and_scope() {
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(format!(
-            r#"{{"ok":true,"user_id":"{USER}","scope":"read_write","source":"easybooks-integration"}}"#
+            r#"{{"ok":true,"user_id":"{USER}","email":"user@example.com","scope":"read_write","source":"easybooks-integration"}}"#
         ))
         .create();
 
@@ -500,6 +500,7 @@ fn whoami_uses_integration_whoami_endpoint_and_reports_user_and_scope() {
         .assert()
         .success()
         .stdout(predicate::str::contains(USER))
+        .stdout(predicate::str::contains(r#""email": "user@example.com""#))
         .stdout(predicate::str::contains(r#""scope": "read_write""#))
         .stdout(predicate::str::contains(r#""api_key_masked": "jz_***""#));
 

@@ -85,14 +85,26 @@ pub fn whoami(client: &ApiClient, cfg: &Config) -> Result<()> {
         .get("user_id")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
+    let email = backend
+        .get("email")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| s.to_string());
     let scope = backend
         .get("scope")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
-    output::print_json(&json!({
+    let mut payload = json!({
         "base_url": cfg.base_url,
         "user_id": user_id,
         "scope": scope,
         "api_key_masked": cfg.api_key_masked(),
-    }))
+    });
+    if let Some(email) = email {
+        payload
+            .as_object_mut()
+            .expect("whoami payload is an object")
+            .insert("email".into(), json!(email));
+    }
+    output::print_json(&payload)
 }
