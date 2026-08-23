@@ -86,7 +86,7 @@ User said this → call this exact command (binary resolution: §B; file-drop de
 | "**invoice stats** (counts / amounts by status)" | `easybooks invoice stats [--year <YYYY>]` | easybooks-invoice |
 | "list my **invoices** [that are unpaid/draft]" | `easybooks invoices list [--status <s>]` | easybooks-invoice |
 | "is EasyBooks **healthy** / which backend am I on / token still valid" | `easybooks --json doctor` (local config + backend round-trip + version) | this file |
-| "**connect** EasyBooks / save my API key / set it up" | `connect-easybooks` skill → user-local hidden entry via `easybooks login --token-stdin [--base-url <url>]` | connect-easybooks |
+| "**connect** EasyBooks / save my platform token / set it up" | `connect-easybooks` skill → user-local hidden entry via `easybooks login --token-stdin [--base-url <url>]` | connect-easybooks |
 | "EasyBooks **out of date**?" | `easybooks --json doctor --no-fetch --check-upgrade` | connect-easybooks |
 
 Routing detail below is supplementary — start with this table.
@@ -219,7 +219,7 @@ If unsure, ask one specific question; if it stays unknown, mark it **needs-revie
 
 **Pure-personal is NOT recorded (server-side drop):** an entry that resolves to `personal` is **not booked at all** — no transaction row, no receipt upload — and is returned under `skipped_personal` instead of `created`. It resolves to personal when EITHER the entry carries `classification: "personal"`, OR its sender is one the user has already taught is pure-personal (a confident learned rule, via `reclassify --class personal --learn`). So after you teach a sender as personal, future emails from it are auto-dropped, not recorded. Still submit such entries with `source_payload.from` (don't pre-filter in the agent) — the server decides and reports the count. This applies only to `personal`; `mixed` and not-yet-confident senders are still recorded for review.
 
-`tx import-json` / `gmail record` JSON envelope (the user is identified by the API key, so no owner id):
+`tx import-json` / `gmail record` JSON envelope (the user is identified by the platform token, so no owner id):
 ```json
 { "source_system": "gmail|receipt-drop|...", "entries": [ <Entry>... ] }
 ```
@@ -315,19 +315,19 @@ The CLI talks to the EasyBooks backend integration endpoints under `/api/integra
 
 ### 6.1 Parallelize reads, serialize the config write
 
-The CLI is stateless per invocation. Run independent **reads** in parallel — e.g. `categories list` + `clients list` + `invoices list` when staging an invoice. The only thing that is **serial** is `login` (it writes `~/.easybooks/config.json`). Recording / invoice writes are independent across distinct `source_id`s, but prefer a single batch `tx import-json` over many parallel `expense add` calls so idempotency and the created/existing counts stay coherent.
+The CLI is stateless per invocation. Run independent **reads** in parallel — e.g. `categories list` + `clients list` + `invoices list` when staging an invoice. The only thing that is **serial** is `login` (it writes the shared token slot `~/.jackyzhang.app/token/user.json` plus the product runtime config). Recording / invoice writes are independent across distinct `source_id`s, but prefer a single batch `tx import-json` over many parallel `expense add` calls so idempotency and the created/existing counts stay coherent.
 
 ## §G. Governance — production gate (REQUIRED, surface to user)
 
 - EasyBooks is governed by the current platform-vault `eb` project card and shared plugin policy. Those canonical files outrank this skill if they change.
 - The CLI **defaults to the PROD backend** (`https://easybooks.jackyzhang.app`) — the immicore Go eb-plugin reached via the eb frontend domain's nginx `/api` proxy. The legacy Node backend on `http://localhost:8080` is no longer the default. For non-production work, override to **test** (`https://easybooks-test.jackyzhang.app`) or **LAN** (`http://192.168.1.69:8310`) via `--base-url`.
 - Because the default is production, **any write is a production write** and is gated. Before a production mutation, require the explicit current-session authorization named by the project card. If it is absent, stop; do not invent an artifact or reuse an older approval.
-- The user's API key is a secret. Never print or log it. It lives only in `~/.easybooks/config.json` (CLI). Mask any value as `eb_***`.
+- The user's platform token is a secret. Never print or log it. It lives only in the shared slot `~/.jackyzhang.app/token/user.json` (mode 0600). Show only masked identifiers.
 
 ## 8. Token & secret rules
 
-- **Never log the API key value.** Mask any `eb_*` value as `eb_***` in any output you show the user.
-- The key is the user's personal EasyBooks API key (`eb_live_...`, scope `read` / `read_write`), minted in the web app and sent as `Authorization: Bearer`. It both authenticates and identifies the user.
-- The key lives only in `~/.easybooks/config.json` (or `%USERPROFILE%\.easybooks\config.json`). Captured once by `connect-easybooks`.
+- **Never log the token value.** Show only masked identifiers in any output you give the user.
+- The credential is the user's durable platform Portal token (`jz_...`), shared by every official Jacky plugin and stored at `~/.jackyzhang.app/token/user.json`. It is sent as `Authorization: Bearer` and both authenticates and identifies the user. Retired `eb_live_` product keys are rejected by the CLI.
+- The token lives only in the shared slot `~/.jackyzhang.app/token/user.json` (Windows: `%USERPROFILE%\.jackyzhang.app\token\user.json`). Captured once by any official Jacky plugin.
 - Do not write the key anywhere else, do not include it in example commands, do not echo it back.
-- Recording, creating invoices, and sending require a **read_write** key; read commands need **read**. A scope/permission error from the CLI means the key is read-only — tell the user to create a Read & write key in the web app.
+- Recording, creating invoices, and sending require write scope; read commands need read. A scope/permission error from the CLI means the user's platform token lacks write scope — have them recheck their Portal token, not mint an EasyBooks API key.

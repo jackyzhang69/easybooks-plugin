@@ -68,16 +68,19 @@ binaries selected via `runtime-manifest.json`.
 
 ## Connect flow
 
-The only thing you input is your personal EasyBooks API key (`eb_live_…`, masked
-everywhere as `eb_***`). You generate it in the EasyBooks web app under
-**Settings → API Keys** — choose **Read & write** to record data, or **Read-only**
-for read commands. The key both authenticates and identifies you, so there is no
+The only thing you input is your platform Portal token (`jz_…`, masked
+everywhere). It is the **same token every official Jacky plugin uses** — if you have
+already connected FormBro, AnyChat, AnyPDF, or AnyDoc, EasyBooks reuses it and you
+connect nothing. Retired `eb_live_` product keys are rejected by the CLI. The token
+both authenticates and identifies you, so there is no
 owner id to provide.
 
-1. Run the `connect-easybooks` skill. It captures the API key and the backend
-   base URL.
-2. You run `easybooks login --token-stdin [--base-url <url>]` in your own terminal and enter the key at the hidden prompt. It writes
-   `~/.easybooks/config.json` (mode `0600`).
+1. Run the `connect-easybooks` skill. It captures the platform Portal token and
+   the backend base URL — and skips straight to step 3 if you already connected
+   any other official Jacky plugin.
+2. The token is fed to `easybooks login --token-stdin [--base-url <url>]` over a
+   non-echoing channel, never on the command line. It writes the shared slot
+   `~/.jackyzhang.app/token/user.json` (mode `0600`).
 3. It confirms the connection with `easybooks whoami` (which echoes your user id
    and scope) and `easybooks doctor`.
 
@@ -101,7 +104,7 @@ EasyBooks is governed under the platform-vault protocol. This build is a
   requires the named explicit current-session authorization; the
   skills warn before any production write.
 - **Secrets are names, not values.** The user's API key is a secret. It is
-  never printed or logged and lives only in `~/.easybooks/config.json` (CLI
+  never printed or logged and lives only in `~/.jackyzhang.app/token/user.json` (CLI
   side). Keys are minted per-user in the EasyBooks web app and carry a scope
   (`read` / `read_write`); a user rotates or revokes their own key there. No
   secret values are generated or committed by this build.

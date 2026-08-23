@@ -2,6 +2,7 @@ use crate::config::{self, AuthKind, Config, ACCOUNTD_AUDIENCE};
 use anyhow::{bail, Context, Result};
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
+use reqwest::StatusCode;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::sync::Mutex;
@@ -9,7 +10,9 @@ use std::time::{Duration, Instant};
 
 /// HTTP client for EasyBooks backend integration endpoints + portal Tell-Jacky.
 ///
-/// Auth: platform owner `jz_...` from shared `token/user.json`.
+/// Auth: platform owner `jz_...` from shared `token/user.json`, exchanged for a
+/// short-lived exact-audience JWT before any accountd product route. The raw
+/// durable credential never reaches a product origin.
 /// Product calls send the owner token (or an in-memory exchanged aud=eb JWT when needed).
 pub struct ApiClient {
     base_url: String,
@@ -89,23 +92,41 @@ impl ApiClient {
                 "Tell Jacky requires a portal owner token (jz_); run easybooks login --token-stdin with the portal token"
             );
         }
-        // Owner jz_ is accepted directly on Tell-Jacky product routes.
-        let token = self.credential.clone();
+        // accountd product routes accept ONLY an exact-audience exchanged JWT.
+        // A raw durable jz_ is rejected there; exchange is the only path that
+        // takes it. See accountd service.go authorizeProductBearer.
         let url = format!(
             "{}/v1/products/{}/feedback",
             self.accountd_url,
             config::TELL_JACKY_PRODUCT
         );
-        let response = self
-            .client
-            .post(url)
-            .header(ACCEPT, "application/json")
-            .header(CONTENT_TYPE, "application/json")
-            .header(AUTHORIZATION, format!("Bearer {token}"))
-            .json(body)
-            .send()
-            .context("Tell Jacky request failed")?;
+        let send = |token: String| {
+            self.client
+                .post(&url)
+                .header(ACCEPT, "application/json")
+                .header(CONTENT_TYPE, "application/json")
+                .header(AUTHORIZATION, format!("Bearer {token}"))
+                .json(body)
+                .send()
+                .context("Tell Jacky request failed")
+        };
+
+        let response = send(self.exchange_owner_token()?)?;
+        // Re-exchange exactly once on 401, then give up. Never fall back to the
+        // raw durable credential.
+        let response = if response.status() == StatusCode::UNAUTHORIZED {
+            self.invalidate_exchanged();
+            send(self.exchange_owner_token()?)?
+        } else {
+            response
+        };
         parse_accountd_response(response)
+    }
+
+    /// Drop any cached exchanged JWT so the next call mints a fresh one.
+    fn invalidate_exchanged(&self) {
+        let mut guard = self.exchanged.lock().expect("exchange lock");
+        *guard = None;
     }
 
     pub fn tell_jacky_get(&self, id: &str) -> Result<Value> {
@@ -114,7 +135,7 @@ impl ApiClient {
                 "Tell Jacky requires a portal owner token (jz_); run easybooks login --token-stdin with the portal token"
             );
         }
-        let token = self.credential.clone();
+        let token = self.exchange_owner_token()?;
         let url = format!(
             "{}/v1/products/{}/feedback/{}",
             self.accountd_url,
@@ -162,7 +183,6 @@ impl ApiClient {
         }
     }
 
-    #[allow(dead_code)]
     fn exchange_owner_token(&self) -> Result<String> {
         {
             let guard = self.exchanged.lock().expect("exchange lock");
@@ -180,7 +200,7 @@ impl ApiClient {
             .header(ACCEPT, "application/json")
             .header(CONTENT_TYPE, "application/json")
             .header(AUTHORIZATION, format!("Bearer {}", self.credential))
-            .json(&json!({ "aud": ACCOUNTD_AUDIENCE }))
+            .json(&json!({ "aud": ACCOUNTD_AUDIENCE, "scopes": ["read", "write"] }))
             .send()
             .context("account service token exchange failed")?;
         let status = response.status();

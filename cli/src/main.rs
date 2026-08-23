@@ -38,7 +38,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Persist the user's API key + base-url to ~/.easybooks/config.json.
+    /// Persist the platform Portal token (jz_) to the shared slot ~/.jackyzhang.app/token/user.json, plus the product base-url.
     Login(LoginArgs),
     /// GET /api/integrations/whoami — confirm config + backend reachability.
     Whoami,

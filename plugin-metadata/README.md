@@ -6,7 +6,7 @@ Bookkeeping for self-employed Canadians. Wraps the **EasyBooks** Rust CLI in Cod
 
 | Skill | Purpose |
 |---|---|
-| [`connect-easybooks`](./skills/connect-easybooks/SKILL.md) | One-time setup. The user mints a personal API key (`eb_live_…`, scope read / read_write) in the EasyBooks web app → persist it + base URL via the CLI. **Run first.** |
+| [`connect-easybooks`](./skills/connect-easybooks/SKILL.md) | One-time setup. Capture the user's platform Portal token (`jz_…`) + base URL via the CLI. Reuses `~/.jackyzhang.app/token/user.json` if any other official plugin already connected. **Run first.** |
 | [`easybooks-capabilities`](./skills/easybooks-capabilities/SKILL.md) | Agent consumption contract: mandatory CLI boundary, intent → command router, binary resolver, the "user dropped a file / pasted invoice / image / PDF / email" decision tree, and operating rules. **Read on every EasyBooks session.** |
 | [`easybooks-record`](./skills/easybooks-record/SKILL.md) | Record income / expenses and ingest receipts and documents. File-import decision tree (Excel / CSV / PDF / image / email / text → Entry JSON → dry-run → record). Idempotency guidance. |
 | [`easybooks-invoice`](./skills/easybooks-invoice/SKILL.md) | Create and send invoices. Client resolution; dry-run before create. |
@@ -26,9 +26,9 @@ Drop a receipt or an invoice — or ask the agent to scan your connected Gmail f
 
 ## The only thing the user inputs
 
-A personal EasyBooks **API key** (`eb_live_…`, shown masked as `eb_***`), generated in the EasyBooks web app under **Settings → API Keys** with a `read` or `read_write` scope. The key both authenticates and identifies the user — there is no owner id to provide.
+The user's durable platform **Portal token** (`jz_…`, always shown masked), shared by every official Jacky plugin and stored at `~/.jackyzhang.app/token/user.json`. It both authenticates and identifies the user — there is no owner id to provide. Retired `eb_live_` product keys are rejected by the CLI.
 
-The user runs `easybooks login --token-stdin [--base-url <url>]` locally and enters the key at a hidden prompt. The CLI writes `~/.easybooks/config.json` (mode `0600`; `%USERPROFILE%\.easybooks\config.json` on Windows). Every other skill reads from that config — the key never enters argv, chat, shell history, or agent tool input; it is never asked for again, never echoed, and never stored anywhere except that single file.
+The token reaches `easybooks login --token-stdin [--base-url <url>]` over a non-echoing channel. The CLI writes the shared slot `~/.jackyzhang.app/token/user.json` (mode `0600`; `%USERPROFILE%\.jackyzhang.app\token\user.json` on Windows). Every other skill and every other official Jacky plugin reads that same slot — the token never enters argv, chat, shell history, or agent tool input; it is never asked for again and never echoed.
 
 ## Key safety (enforced by skill text)
 

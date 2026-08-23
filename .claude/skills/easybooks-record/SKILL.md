@@ -108,7 +108,7 @@ The CLI is JSON-first. It does **not** read local file paths. The agent reads th
 
 ### Entry JSON shape (do not invent fields)
 
-Envelope (the user is identified by the API key, so no owner id is sent):
+Envelope (the user is identified by the platform token, so no owner id is sent):
 ```json
 {
   "source_system": "receipt-drop",
@@ -211,5 +211,5 @@ Recorded rows are upserted on **`(user_id, source_system, source_id)`**. That me
 ## Governance
 
 - The CLI **defaults to the PROD backend** (`https://easybooks.jackyzhang.app`, the immicore eb-plugin via the eb frontend nginx `/api` proxy); the legacy Node `http://localhost:8080` is no longer the default. Override to test (`https://easybooks-test.jackyzhang.app`) or LAN (`http://192.168.1.69:8310`) via `--base-url`. Recording there is a production mutation: require the explicit current-session authorization named by the platform-vault project card (see `easybooks-capabilities` §G), or stop.
-- Recording requires a **read_write** API key. If the CLI returns a scope/permission error, the user's key is read-only — tell them to create a Read & write key in the EasyBooks web app (Settings → API Keys).
-- Never print the user's API key; it is masked as `eb_***` and lives only in `~/.easybooks/config.json`.
+- Recording requires write scope. If the CLI returns a scope/permission error, the user's platform token lacks it — have them recheck their Portal token scope. Do not send them to the EasyBooks web app to mint an API key; `eb_live_` keys are retired.
+- Never print the user's platform token; show masked identifiers only. It lives in `~/.jackyzhang.app/token/user.json`.
