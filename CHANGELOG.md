@@ -1,3 +1,9 @@
+## 0.5.15
+
+- Emit `posting_completed` after a successful write (Product Signals). The CLI
+  posts `events:batch` on the calling thread so `process::exit` cannot kill the
+  request.
+
 ## 0.5.13
 
 - `whoami` forwards optional backend `email` as display metadata.

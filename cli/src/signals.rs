@@ -72,7 +72,6 @@ pub fn emit_posting_completed(client: &ApiClient) {
     if disabled() {
         return;
     }
-    let origin = client.accountd_origin();
     let now = now_rfc3339();
     let seq = COUNTER.load(Ordering::Relaxed);
     let body = json!({
