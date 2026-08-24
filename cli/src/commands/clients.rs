@@ -55,7 +55,23 @@ pub fn create(
         Value::Object(obj)
     };
 
-    output::print_json(&client.post("/api/integrations/clients", &body)?)
+    match client.post("/api/integrations/clients", &body) {
+        Ok(resp) => {
+            crate::signals::emit_named(client, "client_created", "client", "succeeded", "client", None);
+            output::print_json(&resp)
+        }
+        Err(err) => {
+            crate::signals::emit_named(
+                client,
+                "client_created",
+                "client",
+                "failed",
+                "client",
+                Some("client_failed"),
+            );
+            Err(err)
+        }
+    }
 }
 
 /// `easybooks clients update <id> [--name] [--email] [--phone] [--address] [--notes]`

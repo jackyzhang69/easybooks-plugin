@@ -78,9 +78,16 @@ pub fn add(client: &ApiClient, entry_type: &str, args: AddArgs) -> Result<()> {
         }));
     }
 
-    let resp = client.post("/api/integrations/ingest/transactions", &Value::Object(body))?;
-    crate::signals::emit_posting_completed(client);
-    output::print_json(&resp)
+    match client.post("/api/integrations/ingest/transactions", &Value::Object(body)) {
+        Ok(resp) => {
+            crate::signals::emit_posting_completed(client, "succeeded", entry_type, None);
+            output::print_json(&resp)
+        }
+        Err(err) => {
+            crate::signals::emit_posting_completed(client, "failed", entry_type, Some("posting_failed"));
+            Err(err)
+        }
+    }
 }
 
 /// `easybooks tx import-json --json '<json>' [--dry-run]`
@@ -148,12 +155,19 @@ pub fn finish_import(
             "body": Value::Object(body),
         }));
     }
-    let resp = client.post(
+    match client.post(
         "/api/integrations/ingest/transactions",
         &Value::Object(body),
-    )?;
-    crate::signals::emit_posting_completed(client);
-    output::print_json(&resp)
+    ) {
+        Ok(resp) => {
+            crate::signals::emit_posting_completed(client, "succeeded", "import", None);
+            output::print_json(&resp)
+        }
+        Err(err) => {
+            crate::signals::emit_posting_completed(client, "failed", "import", Some("posting_failed"));
+            Err(err)
+        }
+    }
 }
 
 // --- validation helpers ----------------------------------------------------

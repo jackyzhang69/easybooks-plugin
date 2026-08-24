@@ -43,7 +43,23 @@ pub fn show(client: &ApiClient, rule_id: &str) -> Result<()> {
 pub fn create(client: &ApiClient, json_str: &str) -> Result<()> {
     let body: serde_json::Value =
         serde_json::from_str(json_str).context("invalid --json rule payload")?;
-    output::print_json(&client.post("/api/integrations/rules", &body)?)
+    match client.post("/api/integrations/rules", &body) {
+        Ok(resp) => {
+            crate::signals::emit_named(client, "rule_created", "rule", "succeeded", "rule", None);
+            output::print_json(&resp)
+        }
+        Err(err) => {
+            crate::signals::emit_named(
+                client,
+                "rule_created",
+                "rule",
+                "failed",
+                "rule",
+                Some("rule_failed"),
+            );
+            Err(err)
+        }
+    }
 }
 
 /// `easybooks rules delete <rule_id>` → DELETE /api/integrations/rules/{id}

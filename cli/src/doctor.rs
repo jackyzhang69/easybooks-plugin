@@ -94,6 +94,21 @@ pub fn run(args: DoctorArgs, base_url_arg: Option<String>) -> Result<()> {
         "upgrade": upgrade_block,
     });
 
+    if !args.no_fetch {
+        if let Some(cfg) = &cfg {
+            if let Ok(client) = crate::client::ApiClient::from_config(cfg) {
+                let outcome = if backend_block.get("reachable").and_then(|v| v.as_bool()) == Some(true)
+                    && backend_block.get("status").and_then(|v| v.as_str()) == Some("ok")
+                {
+                    "succeeded"
+                } else {
+                    "failed"
+                };
+                crate::signals::emit_named(&client, "doctor_completed", "doctor", outcome, "doctor", None);
+            }
+        }
+    }
+
     output::print_json(&payload)
 }
 

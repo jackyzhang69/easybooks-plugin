@@ -51,8 +51,16 @@ pub fn create(client: &ApiClient, raw: &str, dry_run: bool) -> Result<()> {
         }));
     }
 
-    let resp = client.post("/api/integrations/ingest/invoice", &Value::Object(body))?;
-    output::print_json(&resp)
+    match client.post("/api/integrations/ingest/invoice", &Value::Object(body)) {
+        Ok(resp) => {
+            crate::signals::emit_invoice_created(client, "succeeded", None);
+            output::print_json(&resp)
+        }
+        Err(err) => {
+            crate::signals::emit_invoice_created(client, "failed", Some("invoice_failed"));
+            Err(err)
+        }
+    }
 }
 
 /// `easybooks invoice send <invoice_id>` → proxy to the integration send route
@@ -65,8 +73,23 @@ pub fn send(client: &ApiClient, invoice_id: &str) -> Result<()> {
         "/api/integrations/invoice/{}/send",
         encode_segment(invoice_id)
     );
-    let resp = client.post(&path, &json!({}))?;
-    output::print_json(&resp)
+    match client.post(&path, &json!({})) {
+        Ok(resp) => {
+            crate::signals::emit_named(client, "invoice_sent", "invoice", "succeeded", "invoice", None);
+            output::print_json(&resp)
+        }
+        Err(err) => {
+            crate::signals::emit_named(
+                client,
+                "invoice_sent",
+                "invoice",
+                "failed",
+                "invoice",
+                Some("invoice_failed"),
+            );
+            Err(err)
+        }
+    }
 }
 
 /// `easybooks invoice get <id>`
@@ -91,7 +114,23 @@ pub fn mark(client: &ApiClient, invoice_id: &str, status: &str) -> Result<()> {
         encode_segment(invoice_id)
     );
     let body = json!({ "status": status });
-    output::print_json(&client.post(&path, &body)?)
+    match client.post(&path, &body) {
+        Ok(resp) => {
+            crate::signals::emit_named(client, "invoice_marked", "invoice", "succeeded", "invoice", None);
+            output::print_json(&resp)
+        }
+        Err(err) => {
+            crate::signals::emit_named(
+                client,
+                "invoice_marked",
+                "invoice",
+                "failed",
+                "invoice",
+                Some("invoice_failed"),
+            );
+            Err(err)
+        }
+    }
 }
 
 /// `easybooks invoice pdf <id> [--out <path>]`

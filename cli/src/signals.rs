@@ -67,28 +67,45 @@ fn event_id() -> String {
     )
 }
 
-/// Fail-open. Call only after a successful non-dry-run write.
-pub fn emit_posting_completed(client: &ApiClient) {
+/// Fail-open after a bookkeeping write attempt.
+pub fn emit_posting_completed(client: &ApiClient, outcome: &str, feature: &str, error_code: Option<&str>) {
+    if disabled() {
+        return;
+    }
+    emit_named(client, EVENT_NAME, "posting", outcome, feature, error_code);
+}
+
+/// Fail-open after invoice create.
+pub fn emit_invoice_created(client: &ApiClient, outcome: &str, error_code: Option<&str>) {
+    if disabled() {
+        return;
+    }
+    emit_named(client, "invoice_created", "invoice", outcome, "invoice", error_code);
+}
+
+pub(crate) fn emit_named(client: &ApiClient, event_name: &str, key: &str, outcome: &str, feature: &str, error_code: Option<&str>) {
     if disabled() {
         return;
     }
     let now = now_rfc3339();
     let seq = COUNTER.load(Ordering::Relaxed);
-    let body = json!({
-        "events": [{
-            "event_id": event_id(),
-            "event_name": EVENT_NAME,
-            "event_version": 1,
-            "actor_class": "user",
-            "source": "product_server",
-            "environment": std::env::var("ENVIRONMENT").unwrap_or_else(|_| "production".to_string()),
-            "occurred_at": now,
-            "idempotency_key": format!("easybooks:posting:{}:{}", now, seq),
-            "outcome": "succeeded",
-            "properties": { "outcome": "succeeded" }
-        }]
+    let mut event = json!({
+        "event_id": event_id(),
+        "event_name": event_name,
+        "event_version": 1,
+        "actor_class": "user",
+        "source": "product_server",
+        "environment": std::env::var("ENVIRONMENT").unwrap_or_else(|_| "production".to_string()),
+        "occurred_at": now,
+        "idempotency_key": format!("easybooks:{key}:{}:{}", now, seq),
+        "outcome": outcome,
+        "feature_id": feature,
+        "properties": { "outcome": outcome }
     });
-    client.emit_signals_batch(PLUGIN_ID, body, DEFAULT_TIMEOUT);
+    if let Some(code) = error_code {
+        event["error_code"] = json!(code);
+    }
+    client.emit_signals_batch(PLUGIN_ID, json!({ "events": [event] }), DEFAULT_TIMEOUT);
 }
 
 #[cfg(test)]
@@ -97,5 +114,13 @@ mod tests {
     fn civil_epoch() {
         assert_eq!(super::civil_from_days(0), (1970, 1, 1));
         assert_eq!(super::civil_from_days(1), (1970, 1, 2));
+    }
+
+    #[test]
+    fn emit_disabled_is_noop() {
+        std::env::set_var("EASYBOOKS_PRODUCT_SIGNALS_ENABLED", "0");
+        // No client: disabled() returns before any HTTP. Constructing a dummy
+        // client is unnecessary; the flag must short-circuit first.
+        assert!(super::disabled());
     }
 }
