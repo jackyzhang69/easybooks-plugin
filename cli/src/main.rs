@@ -3,6 +3,7 @@ mod commands;
 mod config;
 mod doctor;
 mod output;
+mod signals;
 
 // The binary/version resolver lives in the lib crate so it can be unit-tested
 // in isolation; re-export the path the binary uses.

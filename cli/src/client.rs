@@ -29,6 +29,38 @@ struct ExchangedToken {
 }
 
 impl ApiClient {
+    pub fn accountd_origin(&self) -> String {
+        self.accountd_url.clone()
+    }
+
+    /// Fail-open Product Signals POST. Never returns an error to the caller.
+    pub fn emit_signals_batch(&self, plugin_id: &str, body: Value, timeout: Duration) {
+        if self.auth_kind != AuthKind::PortalOwner {
+            return;
+        }
+        let url = format!(
+            "{}/v1/products/{plugin_id}/events:batch",
+            self.accountd_url
+        );
+        let jwt = match self.exchange_owner_token() {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+        std::thread::spawn(move || {
+            let client = match Client::builder().timeout(timeout).build() {
+                Ok(c) => c,
+                Err(_) => return,
+            };
+            let _ = client
+                .post(&url)
+                .header(ACCEPT, "application/json")
+                .header(CONTENT_TYPE, "application/json")
+                .header(AUTHORIZATION, format!("Bearer {jwt}"))
+                .json(&body)
+                .send();
+        });
+    }
+
     pub fn from_config(cfg: &Config) -> Result<Self> {
         Self::new_with_timeout(
             cfg.base_url.clone(),

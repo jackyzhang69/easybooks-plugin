@@ -79,6 +79,7 @@ pub fn add(client: &ApiClient, entry_type: &str, args: AddArgs) -> Result<()> {
     }
 
     let resp = client.post("/api/integrations/ingest/transactions", &Value::Object(body))?;
+    crate::signals::emit_posting_completed(client);
     output::print_json(&resp)
 }
 
@@ -151,6 +152,7 @@ pub fn finish_import(
         "/api/integrations/ingest/transactions",
         &Value::Object(body),
     )?;
+    crate::signals::emit_posting_completed(client);
     output::print_json(&resp)
 }
 
