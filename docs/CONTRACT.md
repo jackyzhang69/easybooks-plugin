@@ -190,10 +190,11 @@ with its own auth; it is unchanged by this per-user-key model.
 
 Each skill is `<name>/SKILL.md` with frontmatter `name`, `description`, `when_to_use`.
 Skill set:
-- `connect-easybooks` — one-time setup: the user generates a personal API key in the EasyBooks web app
-  (Settings → API Keys, scope `read` or `read_write`), then the user runs `easybooks login --token-stdin
-  [--base-url <url>]` locally and enters it at the hidden prompt, then `whoami`/`doctor`. Never place the key in chat, argv, shell history, or agent tool input. Token rules include never logging the key;
-  mask `eb_***`; only the CLI's config.json holds it). Tells agent to load `easybooks-capabilities` next.
+- `connect-easybooks` — one-time setup using the shared Portal `jz_` (same contract as every official
+  plugin). Host agent pipes a token file: `printf %s "$(cat -- "$TOKEN_FILE")" | easybooks login --token-stdin
+  [--base-url <url>]`. File preferred; chat paste allowed with one warning; never tell the human to use
+  a terminal; never `--token` argv. Then `whoami`/`doctor`. Never log the key. Tells agent to load
+  `easybooks-capabilities` next.
 - `easybooks-capabilities` — READ-FIRST router. Top-20-line intent→command table. §B binary resolver
   (adapted to `easybooks`/`$EASYBOOKS_BIN`/`easybooks-cli` cache path). Non-negotiable operating rules
   (CLI-only boundary; local parse → CLI record). The decision tree for "user dropped a file / pasted

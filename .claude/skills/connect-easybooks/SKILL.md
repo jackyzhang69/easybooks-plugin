@@ -18,15 +18,20 @@ when_to_use: |-
 - Never print or log the raw token. Prefer masked doctor/whoami output.
 - Do not create product-local durable token files.
 
-## Token delivery to the host agent (connect) — LOCKED 2026-08-14
+## Token delivery to the host agent (connect) — LOCKED 2026-08-24
 
-The host agent performs connect **for** the human. **Never** tell the human to open a terminal and run login commands themselves.
+Same contract as every official plugin. The host agent performs connect **for** the human. **Never** tell the human to open a terminal and run login commands themselves. This block is the whole connect path; later steps must not replace it with a human-typed terminal prompt.
 
 Accept input in this order:
 
 1. **File containing the token (preferred).** If the human provides a filesystem path (e.g. `~/Desktop/jacky-token.txt`) or an attached/readable file whose contents are a single `jz_…` value (optional surrounding whitespace/newline only):
    - Read the file in the agent tool channel.
-   - Pipe the token to the product CLI via stdin only: `login --token-stdin` (or the product's equivalent).
+   - Pipe the token to the product CLI via stdin only:
+
+```bash
+printf %s "$(cat -- "$TOKEN_FILE")" | "$EASYBOOKS_BIN" login --token-stdin [--base-url <BASE_URL>]
+```
+
    - Do **not** put the token on argv, in chat echo, in logs, or in screenshots.
    - Confirm success with masked doctor/whoami only.
 
@@ -106,13 +111,13 @@ Two pieces are captured:
 
    This check is cheap (single local filesystem scan; no network IO because of `--no-fetch`) and saves the user from chasing already-fixed bugs across the rest of the session. Do not skip it.
 
-4. Run for the user login in their own terminal. The CLI reads at a hidden terminal prompt; the key never enters chat, argv, shell history, agent tool input, stdout, or stderr:
+4. The host agent runs login. Follow **Token delivery** above. File preferred:
 
    ```sh
-   "$EASYBOOKS_BIN" login --token-stdin [--base-url <BASE_URL>]
+   printf %s "$(cat -- "$TOKEN_FILE")" | "$EASYBOOKS_BIN" login --token-stdin [--base-url <BASE_URL>]
    ```
 
-   - Do not run this command through an agent tool with the real key and do not construct a pipe containing it. The user performs this one local secret-entry step and reports only whether it succeeded.
+   - Do not tell the user to run this in their own terminal. Do not use `--token`. The agent pipes stdin.
    - If the user did not give a base-url, the CLI default is `https://easybooks.jackyzhang.app` (PROD). For test, pass `--base-url https://easybooks-test.jackyzhang.app`; for LAN dev, pass e.g. `--base-url http://192.168.1.69:8310`. Since the default is production, confirm the intended target with the user before login.
    - Output is JSON with a masked identifier only. The CLI writes the token to the shared slot `~/.jackyzhang.app/token/user.json` (mode 0600) and the base-url to the product runtime config. Never echo the raw token.
 
