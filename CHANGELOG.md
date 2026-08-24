@@ -1,3 +1,8 @@
+## 0.5.16
+
+- Product Signals funnel: invoice send/mark, client create, rule create, and
+  doctor now emit after the backend round-trip. Fail-open.
+
 ## 0.5.15
 
 - Emit `posting_completed` after a successful write (Product Signals). The CLI
