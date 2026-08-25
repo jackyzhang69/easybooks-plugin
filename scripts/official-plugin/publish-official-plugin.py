@@ -153,6 +153,12 @@ def require_marketplace_key(marketplace: Path | None = None) -> None:
     key = os.environ.get("PLUGINS_REPO_DEPLOY_KEY", "").strip()
     if key:
         return
+    # Tagged CI must never succeed on an empty secret even if the clone origin
+    # already points at jackyzhang69/plugins (ssh-agent is what actually pushes).
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        raise PublishError(
+            "PLUGINS_REPO_DEPLOY_KEY is empty; refusing to publish from GitHub Actions"
+        )
     if marketplace is not None:
         proc = subprocess.run(
             ["git", "-C", str(marketplace), "remote", "get-url", "origin"],

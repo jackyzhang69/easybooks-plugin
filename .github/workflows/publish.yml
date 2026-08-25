@@ -75,6 +75,17 @@ jobs:
           test -n "$CSC_LINK"
           test -n "$CSC_KEY_PASSWORD"
 
+      - name: Require marketplace deploy key
+        if: env.IS_TAG == 'true'
+        env:
+          PLUGINS_REPO_DEPLOY_KEY: ${{ secrets.PLUGINS_REPO_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PLUGINS_REPO_DEPLOY_KEY}" ]; then
+            echo "::error::PLUGINS_REPO_DEPLOY_KEY is empty; refusing official plugin publish"
+            exit 1
+          fi
+
       - name: Bootstrap isolated signing keychain
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
