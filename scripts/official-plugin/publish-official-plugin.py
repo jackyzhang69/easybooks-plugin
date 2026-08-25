@@ -22,6 +22,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -277,6 +278,46 @@ def commands_json(bin_path: Path) -> dict[str, Any]:
     return payload
 
 
+PRODUCT_VERSION = re.compile(r"^\d+\.\d+")
+
+
+def is_envelope_version(value: Any) -> bool:
+    if isinstance(value, bool):
+        return True
+    if isinstance(value, int):
+        return True
+    if isinstance(value, str) and value.isdigit():
+        return True
+    return False
+
+
+def runtime_product_versions(runtime: dict[str, Any]) -> list[tuple[str, str]]:
+    """Product semver fields only — skip envelope 3/4."""
+    found: list[tuple[str, str]] = []
+    raw = runtime.get("version")
+    if raw is not None and not is_envelope_version(raw) and PRODUCT_VERSION.match(str(raw)):
+        found.append(("runtime.version", str(raw)))
+    binary = runtime.get("binary")
+    if isinstance(binary, dict):
+        bv = binary.get("version")
+        if bv is not None and not is_envelope_version(bv) and PRODUCT_VERSION.match(str(bv)):
+            found.append(("runtime.binary.version", str(bv)))
+    plugin_version = runtime.get("plugin_version")
+    if plugin_version is not None and not is_envelope_version(plugin_version) and PRODUCT_VERSION.match(str(plugin_version)):
+        found.append(("runtime.plugin_version", str(plugin_version)))
+    return found
+
+
+def require_runtime_matches_package(staged: Path, version: str) -> None:
+    path = staged / "runtime-manifest.json"
+    if not path.is_file():
+        raise PublishError("staged package missing runtime-manifest.json")
+    runtime = _json_load(path)
+    for name, value in runtime_product_versions(runtime):
+        if value != version:
+            raise PublishError(f"{name}={value} disagrees with plugin.json {version}")
+
+
 def package_version(staged: Path) -> str:
     claude = staged / ".claude-plugin" / "plugin.json"
     if not claude.is_file():
@@ -348,6 +389,7 @@ def publish(
             raise PublishError(
                 f"CLI has no --version and commands --json version {json_ver} disagrees with plugin.json {version}"
             )
+    require_runtime_matches_package(staged, version)
     run_verify_package(staged)
     run_skill_surface(staged, plugin_id, bin_path)
     probe_backend(plugin_id, aud)

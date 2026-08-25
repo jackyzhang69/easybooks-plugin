@@ -197,19 +197,48 @@ check_plugin() {
 
   # --- version agreement ------------------------------------------------------
   CUR="version-agreement"
-  local vc vr vx vp
-  vc="$(jqv "$cp" version)"; vr="$(jqv "$rm" version)"
-  vx="$(jqv "$xp" version)"; vp="$(jqv "$rm" plugin_version)"
-  local ref="${vc:-$vr}"
+  local vc vx
+  vc="$(jqv "$cp" version)"
+  vx="$(jqv "$xp" version)"
+  local ref="$vc"
   if [ -z "$ref" ]; then
     warn "no version found to compare"
   else
     local bad=0
-    for pair in "claude:$vc" "codex:$vx" "runtime.plugin_version:$vp"; do
-      local n="${pair%%:*}" v="${pair#*:}"
-      [ -z "$v" ] && continue
-      if [ "$v" != "$ref" ]; then fail "$n=$v disagrees with $ref"; bad=1; fi
-    done
+    if [ -n "$vx" ] && [ "$vx" != "$ref" ]; then fail "codex=$vx disagrees with $ref"; bad=1; fi
+    local runtime_mismatch
+    runtime_mismatch="$(python3 - "$rm" "$ref" <<'PY'
+import json, re, sys
+path, ref = sys.argv[1], sys.argv[2]
+product = re.compile(r"^\d+\.\d+")
+
+def envelope(value):
+    return isinstance(value, int) or (isinstance(value, str) and value.isdigit())
+
+rm = json.load(open(path, encoding="utf-8"))
+pairs = []
+raw = rm.get("version")
+if raw is not None and not envelope(raw) and product.match(str(raw)):
+    pairs.append(("runtime.version", str(raw)))
+binary = rm.get("binary")
+if isinstance(binary, dict):
+    bv = binary.get("version")
+    if bv is not None and not envelope(bv) and product.match(str(bv)):
+        pairs.append(("runtime.binary.version", str(bv)))
+pv = rm.get("plugin_version")
+if pv is not None and not envelope(pv) and product.match(str(pv)):
+    pairs.append(("runtime.plugin_version", str(pv)))
+bad = [f"{name}={value}" for name, value in pairs if value != ref]
+print("\n".join(bad))
+raise SystemExit(1 if bad else 0)
+PY
+)" || true
+    if [ -n "$runtime_mismatch" ]; then
+      while IFS= read -r line; do
+        [ -n "$line" ] && fail "$line disagrees with $ref"
+      done <<< "$runtime_mismatch"
+      bad=1
+    fi
     [ $bad -eq 0 ] && pass "all metadata report $ref"
   fi
 
