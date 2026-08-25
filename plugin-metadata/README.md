@@ -7,9 +7,6 @@ Bookkeeping for self-employed Canadians. Wraps the **EasyBooks** Rust CLI in Cod
 | Skill | Purpose |
 |---|---|
 | [`easybooks`](./skills/easybooks/SKILL.md) | The only discovery file. Connect, record, invoice, Gmail, and tell-jacky playbooks live under `skills/easybooks/references/`. |
-| [`easybooks-record`](./skills/easybooks-record/SKILL.md) | Record income / expenses and ingest receipts and documents. File-import decision tree (Excel / CSV / PDF / image / email / text → Entry JSON → dry-run → record). Idempotency guidance. |
-| [`easybooks-invoice`](./skills/easybooks-invoice/SKILL.md) | Create and send invoices. Client resolution; dry-run before create. |
-| [`easybooks-gmail`](./skills/easybooks-gmail/SKILL.md) | Read candidate receipts / invoices via the connected Gmail MCP, extract them, and record with `easybooks gmail record` (source id = Gmail message id → no double-recording). v2 native OAuth sync is documented as coming. |
 
 ## Core value
 
