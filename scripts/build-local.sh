@@ -18,7 +18,8 @@ BIN_NAME="easybooks"
 
 cargo build --release --target "$TARGET" --bin "$BIN_NAME"
 
-SRC="target/$TARGET/release/$BIN_NAME"
+TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/target}"
+SRC="$TARGET_DIR/$TARGET/release/$BIN_NAME"
 DEST_DIR="bin/$PLATFORM"
 DEST="$DEST_DIR/$BIN_NAME"
 

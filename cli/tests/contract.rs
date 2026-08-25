@@ -4,12 +4,13 @@
 //! endpoints (contract §3) — method, path, headers, and JSON body — against a
 //! mockito server. They never hit a real backend.
 //!
-//! Auth model (v2): every request carries `Authorization: Bearer <api_key>`.
-//! The api_key is the user's personal EasyBooks key; it both authenticates and
-//! identifies the user, so there is no owner-id header or body field.
+//! Auth model: EasyBooks is exchange-mode (`aud=eb`). The durable `jz_` is sent
+//! only to accountd `POST /v1/token/exchange`. Product integration routes receive
+//! the short-lived app JWT. Raw `jz_` must never appear as a product Bearer.
 //!
-//! Config is supplied via env (`EASYBOOKS_API_KEY` / `EASYBOOKS_API_URL`) so the
-//! tests are hermetic and don't touch `~/.easybooks/config.json`.
+//! Config is supplied via env (`EASYBOOKS_API_KEY` / `EASYBOOKS_API_URL` /
+//! `EASYBOOKS_ACCOUNTD_URL`) so the tests are hermetic and don't touch
+//! `~/.easybooks/config.json`.
 
 use assert_cmd::Command;
 use mockito::Matcher;
@@ -20,15 +21,43 @@ fn easybooks() -> Command {
 }
 
 const KEY: &str = "jz_test_key_for_contract";
-const BEARER: &str = "Bearer jz_test_key_for_contract";
+const OWNER_BEARER: &str = "Bearer jz_test_key_for_contract";
+const APP_JWT: &str = "eb.test.jwt";
+const APP_BEARER: &str = "Bearer eb.test.jwt";
 const USER: &str = "11111111-1111-1111-1111-111111111111";
+
+fn mock_exchange(accountd: &mut mockito::Server) -> mockito::Mock {
+    accountd
+        .mock("POST", "/v1/token/exchange")
+        .match_header("authorization", OWNER_BEARER)
+        .match_body(Matcher::JsonString(
+            r#"{"aud":"eb","scopes":["read","write"]}"#.to_string(),
+        ))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(format!(
+            r#"{{"access_token":"{APP_JWT}","token_type":"Bearer","expires_in":300}}"#
+        ))
+        .create()
+}
+
+fn product_cmd(product: &mockito::Server, accountd: &mockito::Server) -> Command {
+    let mut cmd = easybooks();
+    cmd.env("EASYBOOKS_API_URL", product.url())
+        .env("EASYBOOKS_API_KEY", KEY)
+        .env("EASYBOOKS_ACCOUNTD_URL", accountd.url())
+        .env("EASYBOOKS_PORTAL_OFFLINE", "1");
+    cmd
+}
 
 #[test]
 fn expense_add_posts_single_entry_with_bearer_and_cents() {
+    let mut accountd = mockito::Server::new();
+    let exchange = mock_exchange(&mut accountd);
     let mut server = mockito::Server::new();
     let mock = server
         .mock("POST", "/api/integrations/ingest/transactions")
-        .match_header("authorization", BEARER)
+        .match_header("authorization", APP_BEARER)
         .match_body(Matcher::JsonString(
             r#"{
                     "source_system": "manual",
@@ -51,9 +80,7 @@ fn expense_add_posts_single_entry_with_bearer_and_cents() {
         .with_body(r#"{"status":"ok","created":1,"existing":0,"skipped":0,"processed":1}"#)
         .create();
 
-    easybooks()
-        .env("EASYBOOKS_API_URL", server.url())
-        .env("EASYBOOKS_API_KEY", KEY)
+    product_cmd(&server, &accountd)
         .args([
             "expense",
             "add",
@@ -75,6 +102,7 @@ fn expense_add_posts_single_entry_with_bearer_and_cents() {
         .stdout(predicate::str::contains(r#""created": 1"#));
 
     mock.assert();
+    exchange.assert();
 }
 
 #[test]
@@ -109,10 +137,12 @@ fn income_add_dry_run_does_not_post_and_echoes_cents() {
 
 #[test]
 fn tx_import_json_posts_envelope_verbatim() {
+    let mut accountd = mockito::Server::new();
+    let exchange = mock_exchange(&mut accountd);
     let mut server = mockito::Server::new();
     let mock = server
         .mock("POST", "/api/integrations/ingest/transactions")
-        .match_header("authorization", BEARER)
+        .match_header("authorization", APP_BEARER)
         .match_body(Matcher::JsonString(
             r#"{
                     "source_system": "stripe",
@@ -142,15 +172,14 @@ fn tx_import_json_posts_envelope_verbatim() {
 
     let payload = r#"{"source_system":"stripe","entries":[{"type":"income","amount_cents":5000,"description":"Payout","date":"2026-03-01","source_id":"po_1"},{"type":"expense","amount_cents":250,"description":"Fee","date":"2026-03-01","source_id":"fee_1"}]}"#;
 
-    easybooks()
-        .env("EASYBOOKS_API_URL", server.url())
-        .env("EASYBOOKS_API_KEY", KEY)
+    product_cmd(&server, &accountd)
         .args(["tx", "import-json", "--json", payload])
         .assert()
         .success()
         .stdout(predicate::str::contains(r#""processed": 2"#));
 
     mock.assert();
+    exchange.assert();
 }
 
 #[test]
@@ -185,10 +214,12 @@ fn tx_import_json_rejects_entry_missing_source_id() {
 
 #[test]
 fn gmail_record_defaults_source_system_to_gmail() {
+    let mut accountd = mockito::Server::new();
+    let exchange = mock_exchange(&mut accountd);
     let mut server = mockito::Server::new();
     let mock = server
         .mock("POST", "/api/integrations/ingest/transactions")
-        .match_header("authorization", BEARER)
+        .match_header("authorization", APP_BEARER)
         .match_body(Matcher::JsonString(
             r#"{
                     "source_system": "gmail",
@@ -212,15 +243,14 @@ fn gmail_record_defaults_source_system_to_gmail() {
     // Note: no source_system in the input JSON — gmail record must default it.
     let payload = r#"{"entries":[{"type":"expense","amount_cents":4200,"description":"AWS","date":"2026-02-02","source_id":"msg-abc"}]}"#;
 
-    easybooks()
-        .env("EASYBOOKS_API_URL", server.url())
-        .env("EASYBOOKS_API_KEY", KEY)
+    product_cmd(&server, &accountd)
         .args(["gmail", "record", "--json", payload])
         .assert()
         .success()
         .stdout(predicate::str::contains(r#""created": 1"#));
 
     mock.assert();
+    exchange.assert();
 }
 
 #[test]
@@ -482,10 +512,12 @@ fn login_defaults_to_prod_when_arg_and_env_absent() {
 
 #[test]
 fn whoami_uses_integration_whoami_endpoint_and_reports_user_and_scope() {
+    let mut accountd = mockito::Server::new();
+    let exchange = mock_exchange(&mut accountd);
     let mut server = mockito::Server::new();
     let mock = server
         .mock("GET", "/api/integrations/whoami")
-        .match_header("authorization", BEARER)
+        .match_header("authorization", APP_BEARER)
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(format!(
@@ -493,9 +525,7 @@ fn whoami_uses_integration_whoami_endpoint_and_reports_user_and_scope() {
         ))
         .create();
 
-    easybooks()
-        .env("EASYBOOKS_API_URL", server.url())
-        .env("EASYBOOKS_API_KEY", KEY)
+    product_cmd(&server, &accountd)
         .args(["whoami"])
         .assert()
         .success()
@@ -505,29 +535,31 @@ fn whoami_uses_integration_whoami_endpoint_and_reports_user_and_scope() {
         .stdout(predicate::str::contains(r#""api_key_masked": "jz_***""#));
 
     mock.assert();
+    exchange.assert();
 }
 
 #[test]
 fn categories_list_hits_categories_endpoint_with_type_and_bearer() {
+    let mut accountd = mockito::Server::new();
+    let exchange = mock_exchange(&mut accountd);
     let mut server = mockito::Server::new();
     let mock = server
         .mock("GET", "/api/integrations/categories")
         .match_query(Matcher::UrlEncoded("type".into(), "expense".into()))
-        .match_header("authorization", BEARER)
+        .match_header("authorization", APP_BEARER)
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(r#"[]"#)
         .create();
 
-    easybooks()
-        .env("EASYBOOKS_API_URL", server.url())
-        .env("EASYBOOKS_API_KEY", KEY)
+    product_cmd(&server, &accountd)
         .args(["categories", "list", "--type", "expense"])
         .assert()
         .success()
         .stdout(predicate::str::contains("[]"));
 
     mock.assert();
+    exchange.assert();
 }
 
 #[test]
@@ -547,24 +579,25 @@ fn invoice_create_dry_run_does_not_post() {
 
 #[test]
 fn invoice_send_posts_to_integration_route_with_bearer() {
+    let mut accountd = mockito::Server::new();
+    let exchange = mock_exchange(&mut accountd);
     let mut server = mockito::Server::new();
     let mock = server
         .mock("POST", "/api/integrations/invoice/inv_42/send")
-        .match_header("authorization", BEARER)
+        .match_header("authorization", APP_BEARER)
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(r#"{"sent":true}"#)
         .create();
 
-    easybooks()
-        .env("EASYBOOKS_API_URL", server.url())
-        .env("EASYBOOKS_API_KEY", KEY)
+    product_cmd(&server, &accountd)
         .args(["invoice", "send", "inv_42"])
         .assert()
         .success()
         .stdout(predicate::str::contains(r#""sent": true"#));
 
     mock.assert();
+    exchange.assert();
 }
 
 #[test]
@@ -584,10 +617,12 @@ fn missing_config_is_a_structured_error() {
 
 #[test]
 fn tx_reclassify_posts_classification_and_learn_with_bearer() {
+    let mut accountd = mockito::Server::new();
+    let exchange = mock_exchange(&mut accountd);
     let mut server = mockito::Server::new();
     let mock = server
         .mock("POST", "/api/integrations/transactions/txn_77/reclassify")
-        .match_header("authorization", BEARER)
+        .match_header("authorization", APP_BEARER)
         .match_body(Matcher::JsonString(
             r#"{"classification":"mixed","learn":true}"#.to_string(),
         ))
@@ -596,9 +631,7 @@ fn tx_reclassify_posts_classification_and_learn_with_bearer() {
         .with_body(r#"{"ok":true,"classification":"mixed","learned":true}"#)
         .create();
 
-    easybooks()
-        .env("EASYBOOKS_API_URL", server.url())
-        .env("EASYBOOKS_API_KEY", KEY)
+    product_cmd(&server, &accountd)
         .args([
             "tx",
             "reclassify",
@@ -612,14 +645,17 @@ fn tx_reclassify_posts_classification_and_learn_with_bearer() {
         .stdout(predicate::str::contains(r#""classification": "mixed""#));
 
     mock.assert();
+    exchange.assert();
 }
 
 #[test]
 fn tx_reclassify_defaults_learn_false() {
+    let mut accountd = mockito::Server::new();
+    let exchange = mock_exchange(&mut accountd);
     let mut server = mockito::Server::new();
     let mock = server
         .mock("POST", "/api/integrations/transactions/txn_77/reclassify")
-        .match_header("authorization", BEARER)
+        .match_header("authorization", APP_BEARER)
         .match_body(Matcher::JsonString(
             r#"{"classification":"personal","learn":false}"#.to_string(),
         ))
@@ -628,14 +664,13 @@ fn tx_reclassify_defaults_learn_false() {
         .with_body(r#"{"ok":true}"#)
         .create();
 
-    easybooks()
-        .env("EASYBOOKS_API_URL", server.url())
-        .env("EASYBOOKS_API_KEY", KEY)
+    product_cmd(&server, &accountd)
         .args(["tx", "reclassify", "txn_77", "--class", "personal"])
         .assert()
         .success();
 
     mock.assert();
+    exchange.assert();
 }
 
 #[test]
@@ -645,10 +680,12 @@ fn tx_attach_receipt_uploads_base64_and_prints_receipt_url() {
     // "%PDF-1.4" → base64 "JVBERi0xLjQ=".
     std::fs::write(&file, b"%PDF-1.4").expect("write fixture");
 
+    let mut accountd = mockito::Server::new();
+    let exchange = mock_exchange(&mut accountd);
     let mut server = mockito::Server::new();
     let mock = server
         .mock("POST", "/api/integrations/transactions/txn_88/receipt")
-        .match_header("authorization", BEARER)
+        .match_header("authorization", APP_BEARER)
         .match_body(Matcher::JsonString(
             r#"{"filename":"receipt.pdf","content_type":"application/pdf","content_base64":"JVBERi0xLjQ="}"#
                 .to_string(),
@@ -658,9 +695,7 @@ fn tx_attach_receipt_uploads_base64_and_prints_receipt_url() {
         .with_body(r#"{"ok":true,"receipt_url":"https://cdn.example/receipts/txn_88.pdf"}"#)
         .create();
 
-    easybooks()
-        .env("EASYBOOKS_API_URL", server.url())
-        .env("EASYBOOKS_API_KEY", KEY)
+    product_cmd(&server, &accountd)
         .args([
             "tx",
             "attach-receipt",
@@ -675,6 +710,7 @@ fn tx_attach_receipt_uploads_base64_and_prints_receipt_url() {
         ));
 
     mock.assert();
+    exchange.assert();
 }
 
 #[test]
@@ -720,4 +756,74 @@ fn tx_attach_receipt_rejects_unsupported_extension() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("unsupported receipt type"));
+}
+
+#[test]
+fn whoami_never_sends_raw_owner_token_to_product() {
+    let mut accountd = mockito::Server::new();
+    let exchange = mock_exchange(&mut accountd);
+    let mut server = mockito::Server::new();
+    let leaked = server
+        .mock("GET", "/api/integrations/whoami")
+        .match_header("authorization", OWNER_BEARER)
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"ok":true,"user_id":"leaked","scope":"read"}"#)
+        .expect(0)
+        .create();
+    let ok = server
+        .mock("GET", "/api/integrations/whoami")
+        .match_header("authorization", APP_BEARER)
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(format!(
+            r#"{{"ok":true,"user_id":"{USER}","scope":"read_write","source":"easybooks-integration"}}"#
+        ))
+        .create();
+
+    product_cmd(&server, &accountd)
+        .args(["whoami"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(USER));
+
+    leaked.assert();
+    ok.assert();
+    exchange.assert();
+}
+
+#[test]
+fn whoami_reexchanges_once_on_product_401() {
+    let mut accountd = mockito::Server::new();
+    let exchange = accountd
+        .mock("POST", "/v1/token/exchange")
+        .match_header("authorization", OWNER_BEARER)
+        .match_body(Matcher::JsonString(
+            r#"{"aud":"eb","scopes":["read","write"]}"#.to_string(),
+        ))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(format!(
+            r#"{{"access_token":"{APP_JWT}","token_type":"Bearer","expires_in":300}}"#
+        ))
+        .expect(2)
+        .create();
+    let mut server = mockito::Server::new();
+    let unauthorized = server
+        .mock("GET", "/api/integrations/whoami")
+        .match_header("authorization", APP_BEARER)
+        .with_status(401)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"error":"Unauthorized"}"#)
+        .expect(2)
+        .create();
+
+    product_cmd(&server, &accountd)
+        .args(["whoami"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("401"));
+
+    unauthorized.assert();
+    exchange.assert();
 }

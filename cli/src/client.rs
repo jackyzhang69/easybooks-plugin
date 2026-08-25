@@ -10,10 +10,10 @@ use std::time::{Duration, Instant};
 
 /// HTTP client for EasyBooks backend integration endpoints + portal Tell-Jacky.
 ///
-/// Auth: platform owner `jz_...` from shared `token/user.json`, exchanged for a
-/// short-lived exact-audience JWT before any accountd product route. The raw
-/// durable credential never reaches a product origin.
-/// Product calls send the owner token (or an in-memory exchanged aud=eb JWT when needed).
+/// Auth (exchange mode, aud=eb): platform owner `jz_...` from shared
+/// `token/user.json` is exchanged for a short-lived exact-audience JWT. The raw
+/// durable credential is sent only to accountd `/v1/token/exchange`. Product
+/// origins and accountd product routes receive the in-memory JWT only.
 pub struct ApiClient {
     base_url: String,
     accountd_url: String,
@@ -186,27 +186,36 @@ impl ApiClient {
         query: Vec<(&str, String)>,
         body: Option<T>,
     ) -> Result<Response> {
-        let bearer = self.authorization_token()?;
         let url = format!("{}{}", self.base_url, path);
-        let mut req = self
-            .client
-            .request(method.parse()?, &url)
-            .header(ACCEPT, "application/json")
-            .header(AUTHORIZATION, format!("Bearer {bearer}"));
-        if !query.is_empty() {
-            req = req.query(&query);
+        let send = |token: String| -> Result<Response> {
+            let mut req = self
+                .client
+                .request(method.parse()?, &url)
+                .header(ACCEPT, "application/json")
+                .header(AUTHORIZATION, format!("Bearer {token}"));
+            if !query.is_empty() {
+                req = req.query(&query);
+            }
+            if let Some(body) = body.as_ref() {
+                req = req.header(CONTENT_TYPE, "application/json").json(body);
+            }
+            req.send().with_context(|| format!("{method} {path} failed"))
+        };
+
+        let response = send(self.authorization_token()?)?;
+        // Re-exchange exactly once on 401, then give up. Never fall back to the
+        // raw durable credential on a product origin.
+        if response.status() == StatusCode::UNAUTHORIZED {
+            self.invalidate_exchanged();
+            send(self.authorization_token()?)
+        } else {
+            Ok(response)
         }
-        if let Some(body) = body {
-            req = req.header(CONTENT_TYPE, "application/json").json(&body);
-        }
-        req.send().with_context(|| format!("{method} {path} failed"))
     }
 
     fn authorization_token(&self) -> Result<String> {
         match self.auth_kind {
-            // Prefer owner jz_ end-to-end. Exchange remains available for
-            // product APIs that still require an exact-audience app JWT.
-            AuthKind::PortalOwner => Ok(self.credential.clone()),
+            AuthKind::PortalOwner => self.exchange_owner_token(),
         }
     }
 

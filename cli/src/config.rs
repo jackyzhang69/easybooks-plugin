@@ -36,7 +36,7 @@ pub struct ConfigFile {
 /// Resolved runtime config.
 #[derive(Debug, Clone)]
 pub struct Config {
-    /// Portal owner `jz_` (exchange happens in the HTTP client).
+    /// Portal owner `jz_` (product HTTP exchanges aud=eb in the HTTP client).
     pub credential: String,
     pub base_url: String,
     pub auth_kind: AuthKind,

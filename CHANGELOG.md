@@ -1,3 +1,8 @@
+## 0.5.17
+
+- Product HTTP exchanges `aud=eb` and sends the short-lived app JWT (memory
+  only). Raw `jz_` is never a product Bearer. Re-exchange once on 401.
+
 ## 0.5.16
 
 - Product Signals funnel: invoice send/mark, client create, rule create, and
