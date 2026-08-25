@@ -1,15 +1,3 @@
----
-name: easybooks-record
-description: Record income and expense transactions in EasyBooks — quick one-off entries and document/receipt ingestion. Parse the user's file locally (Excel/CSV/PDF/image/email/text) into Entry JSON, dry-run, confirm, then record. Idempotent on source_id so re-imports never double-record. Requires connect-easybooks first. See easybooks-capabilities for the full router and JSON shapes.
-when_to_use: |-
-  Trigger phrases:
-    - "log / record a $X expense for <thing> on <date>"
-    - "record this income / payment I received"
-    - "here's a receipt / supplier invoice / screenshot / scanned PDF — record it"
-    - "import this spreadsheet / bank statement / CSV of expenses"
-    - "what categories do I have"
----
-
 ## Shared platform token (host agent — mandatory)
 
 - Canonical durable user credential: `~/.jackyzhang.app/token/user.json` (`jz_` only).
@@ -47,7 +35,7 @@ Hard rules:
 
 # Record EasyBooks transactions
 
-All commands shell out to the bundled `easybooks` CLI. Resolve it once via `easybooks-capabilities/SKILL.md` §B and invoke that exact path; do not rely on ambient `PATH`. All output is JSON on stdout; structured errors go to stderr with a non-zero exit.
+All commands shell out to the bundled `easybooks` CLI. Resolve it once via `the easybooks router/SKILL.md` §B and invoke that exact path; do not rely on ambient `PATH`. All output is JSON on stdout; structured errors go to stderr with a non-zero exit.
 
 **Cardinal rule:** every write goes through the bundled CLI. Never bypass it with a direct backend request or a database write. The agent may parse files locally to extract facts, but the moment data is recorded it goes through `easybooks`.
 
@@ -92,7 +80,7 @@ The CLI is JSON-first. It does **not** read local file paths. The agent reads th
 | Excel / XLSX / CSV table (statement, expense log) | Read the sheet; one row → one Entry. Map columns to amount / date / description / category. | one batch `tx import-json` |
 | PDF (supplier invoice, receipt, bank statement) | Extract text; pull amount, date, vendor, tax. | Entry per charge |
 | Image / photo / scan of a receipt | OCR the image; read total, date, merchant. | usually one Entry |
-| Email body / forwarded receipt | Read the text; extract amount, date, vendor. | Entry per receipt (Gmail flow → use `easybooks-gmail`) |
+| Email body / forwarded receipt | Read the text; extract amount, date, vendor. | Entry per receipt (Gmail flow → use `references/gmail.md`) |
 | Plain text the user pasted | Parse the described transactions. | Entry per transaction |
 
 ### Mandatory sequence
@@ -198,7 +186,7 @@ Recorded rows are upserted on **`(user_id, source_system, source_id)`**. That me
 | "this should be personal / mixed, not business" / "fix the classification" | `"$EASYBOOKS_BIN" tx reclassify <id> --class business\|mixed\|personal [--learn]` |
 | "attach the receipt / PDF to this transaction" | `"$EASYBOOKS_BIN" tx attach-receipt <id> --file <path>` |
 | "what categories do I have" | `"$EASYBOOKS_BIN" categories list [--type income\|expense]` |
-| "scan my Gmail for receipts" | hand off to **easybooks-gmail** (uses `gmail record`, source_id = message id) |
+| "scan my Gmail for receipts" | hand off to [gmail](gmail.md) (uses `gmail record`, source_id = message id) |
 
 ## Default behavior & confirmation
 
@@ -210,6 +198,6 @@ Recorded rows are upserted on **`(user_id, source_system, source_id)`**. That me
 
 ## Governance
 
-- The CLI **defaults to the PROD backend** (`https://easybooks.jackyzhang.app`, the immicore eb-plugin via the eb frontend nginx `/api` proxy); the legacy Node `http://localhost:8080` is no longer the default. Override to test (`https://easybooks-test.jackyzhang.app`) or LAN (`http://192.168.1.69:8310`) via `--base-url`. Recording there is a production mutation: require the explicit current-session authorization named by the platform-vault project card (see `easybooks-capabilities` §G), or stop.
+- The CLI **defaults to the PROD backend** (`https://easybooks.jackyzhang.app`, the immicore eb-plugin via the eb frontend nginx `/api` proxy); the legacy Node `http://localhost:8080` is no longer the default. Override to test (`https://easybooks-test.jackyzhang.app`) or LAN (`http://192.168.1.69:8310`) via `--base-url`. Recording there is a production mutation: require the explicit current-session authorization named by the platform-vault project card (see `the easybooks router` §G), or stop.
 - Recording requires write scope. If the CLI returns a scope/permission error, the user's platform token lacks it — have them recheck their Portal token scope. Do not send them to the EasyBooks web app to mint an API key; `eb_live_` keys are retired.
 - Never print the user's platform token; show masked identifiers only. It lives in `~/.jackyzhang.app/token/user.json`.

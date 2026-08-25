@@ -1,14 +1,3 @@
----
-name: connect-easybooks
-description: One-time setup. Capture the user's platform Portal token (jz_…) and the backend base-url through the bundled CLI with `easybooks login --token-stdin`. If ~/.jackyzhang.app/token/user.json already exists from any other official plugin, the user is already connected — do not ask again. Run this once before any other EasyBooks skill, then load easybooks-capabilities for the agent consumption contract.
-when_to_use: |-
-  Trigger phrases:
-    - "connect to easybooks / set up easybooks"
-    - "log in to easybooks / save my jz_ platform token"
-    - "configure the easybooks plugin / use this key + base url"
-    - first invocation of any EasyBooks skill when ~/.jackyzhang.app/token/user.json is missing
----
-
 ## Shared platform token (host agent — mandatory)
 
 - Canonical durable user credential: `~/.jackyzhang.app/token/user.json` (`jz_` only).
@@ -54,10 +43,10 @@ Hard rules:
 ## Skill load order (resolves any apparent contradiction)
 
 Two different time-scales:
-- **`connect-easybooks` (THIS skill)** is the **one-time setup ritual** — runs once per user/machine to capture the user's platform Portal token (`jz_`) + base-url and verify cache freshness. Then it tells you to load `easybooks-capabilities`.
-- **`easybooks-capabilities`** is the **every-session reference contract** — load it (and keep it loaded) for every interaction. Its description says "READ THIS FIRST" because, once setup is done, capabilities is what an agent reads first on each subsequent session.
+- **`references/connect.md` (THIS skill)** is the **one-time setup ritual** — runs once per user/machine to capture the user's platform Portal token (`jz_`) + base-url and verify cache freshness. Then it tells you to load `the easybooks router`.
+- **`the easybooks router`** is the **every-session reference contract** — load it (and keep it loaded) for every interaction. Its description says "READ THIS FIRST" because, once setup is done, capabilities is what an agent reads first on each subsequent session.
 
-So: **`connect-easybooks` once → then `easybooks-capabilities` every session**, including the very first one. Both can be true.
+So: **`references/connect.md` once → then `the easybooks router` every session**, including the very first one. Both can be true.
 
 ## Already-connected fast path
 
@@ -74,7 +63,7 @@ Two pieces are captured:
 ## How it works
 
 1. **Obtain the user's platform Portal token (`jz_`)** — but first check whether `~/.jackyzhang.app/token/user.json` already exists; if it does, skip this step entirely and never ask again. Do **not** send the user to the EasyBooks web app to mint an API key: retired `eb_live_` product keys are rejected by the CLI. Follow the token-delivery rules at the top of this skill (file path preferred, chat paste allowed with one warning). Confirm only the backend target. **If they don't specify, the default is `https://easybooks.jackyzhang.app` (PROD).** For test work pass `https://easybooks-test.jackyzhang.app`; for a LAN dev backend pass e.g. `http://192.168.1.69:8310`.
-2. **Resolve the bundled `easybooks` binary** — defer to `easybooks-capabilities/SKILL.md` §B (the canonical resolver: `$EASYBOOKS_BIN` → `$CLAUDE_PLUGIN_ROOT` → codex cache → `command -v`). Set `$EASYBOOKS_BIN` in the shell once; every subsequent command in every EasyBooks skill uses that exact path, not an ambient `PATH` lookup.
+2. **Resolve the bundled `easybooks` binary** — defer to `the easybooks router/SKILL.md` §B (the canonical resolver: `$EASYBOOKS_BIN` → `$CLAUDE_PLUGIN_ROOT` → codex cache → `command -v`). Set `$EASYBOOKS_BIN` in the shell once; every subsequent command in every EasyBooks skill uses that exact path, not an ambient `PATH` lookup.
 3. **Plugin cache freshness self-check (mandatory):**
 
    ```sh
@@ -155,7 +144,7 @@ Tell the user:
 > - "scan my Gmail for receipts and record them" — read via Gmail, record idempotently
 > - "is EasyBooks healthy / which backend am I on" — runs `easybooks --json doctor`
 
-Then (silently, no narration) load `easybooks-capabilities/SKILL.md`. It tells you:
+Then (silently, no narration) load `the easybooks router/SKILL.md`. It tells you:
 - Which skill to call for any user intent (the top-20-line router)
 - The binary resolver (§B) and Entry / invoice JSON shapes (§2)
 - The local-parse → CLI-record boundary

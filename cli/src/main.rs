@@ -10,7 +10,7 @@ mod signals;
 use easybooks_cli::bootstrap;
 
 use anyhow::Result;
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use commands::{clients, dashboard, gmail, invoices, read, rules, setup, transactions, tx_ops, tx_query};
 
 #[derive(Parser)]
@@ -69,6 +69,13 @@ enum Command {
     Feedback(FeedbackCommand),
     /// Private operator surface (Tell Jacky admin feedback). Requires admin.json.
     Admin(AdminCommand),
+    /// Dump the public CLI command surface as JSON (plugin skill contract).
+    #[command(name = "commands")]
+    CliCommands {
+        /// Always JSON; accepted so `easybooks commands --json` is the contract.
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
 }
 
 #[derive(Args)]
@@ -657,7 +664,50 @@ fn run() -> Result<()> {
     match cli.command {
         Command::Login(args) => setup::login_from_stdin(args.token_stdin, args.base_url),
         Command::Doctor(args) => doctor::run(args, base_url_arg),
+        Command::CliCommands { json: _ } => print_plugin_cli_commands(),
         other => dispatch(other, base_url_arg),
+    }
+}
+
+fn print_plugin_cli_commands() -> Result<()> {
+    println!("{}", serde_json::to_string(&plugin_cli_commands_payload())?);
+    Ok(())
+}
+
+fn plugin_cli_commands_payload() -> serde_json::Value {
+    let mut commands = Vec::new();
+    collect_public_command_paths(&Cli::command(), &mut Vec::new(), &mut commands);
+    serde_json::json!({
+        "schema": "plugin-cli-commands-v1",
+        "bin": "easybooks",
+        "version": env!("CARGO_PKG_VERSION"),
+        "commands": commands
+            .into_iter()
+            .map(|path| serde_json::json!({ "path": path }))
+            .collect::<Vec<_>>(),
+    })
+}
+
+fn collect_public_command_paths(
+    cmd: &clap::Command,
+    prefix: &mut Vec<String>,
+    out: &mut Vec<Vec<String>>,
+) {
+    let visible: Vec<&clap::Command> = cmd
+        .get_subcommands()
+        .filter(|sub| !sub.is_hide_set())
+        .filter(|sub| sub.get_name() != "help" && sub.get_name() != "admin")
+        .collect();
+    if visible.is_empty() {
+        if !prefix.is_empty() {
+            out.push(prefix.clone());
+        }
+        return;
+    }
+    for sub in visible {
+        prefix.push(sub.get_name().to_string());
+        collect_public_command_paths(sub, prefix, out);
+        prefix.pop();
     }
 }
 
@@ -668,7 +718,7 @@ fn dispatch(command: Command, base_url_arg: Option<String>) -> Result<()> {
     let client = client::ApiClient::from_config(&config)?;
 
     match command {
-        Command::Login(_) | Command::Doctor(_) => unreachable!(),
+        Command::Login(_) | Command::Doctor(_) | Command::CliCommands { .. } => unreachable!(),
         Command::Whoami => setup::whoami(&client, &config),
         Command::Categories(cmd) => match cmd.command {
             CategoriesSub::List { type_filter } => {
@@ -1309,5 +1359,39 @@ mod tests {
             }
             _ => panic!("expected dashboard command"),
         }
+    }
+
+    #[test]
+    fn commands_json_schema_lists_public_paths_and_omits_admin() {
+        let payload = super::plugin_cli_commands_payload();
+        assert_eq!(payload["schema"], "plugin-cli-commands-v1");
+        assert_eq!(payload["bin"], "easybooks");
+        assert_eq!(payload["version"], env!("CARGO_PKG_VERSION"));
+        let paths: Vec<Vec<String>> = payload["commands"]
+            .as_array()
+            .expect("commands")
+            .iter()
+            .map(|item| {
+                item["path"]
+                    .as_array()
+                    .expect("path")
+                    .iter()
+                    .map(|part| part.as_str().unwrap().to_string())
+                    .collect()
+            })
+            .collect();
+        assert!(paths.contains(&vec!["login".into()]));
+        assert!(paths.contains(&vec!["invoice".into(), "create".into()]));
+        assert!(paths.contains(&vec!["feedback".into(), "create".into()]));
+        assert!(paths.contains(&vec!["commands".into()]));
+        assert!(!paths
+            .iter()
+            .any(|path| path.first().map(String::as_str) == Some("admin")));
+        let cli = Cli::try_parse_from(["easybooks", "commands", "--json"])
+            .expect("commands --json should parse");
+        assert!(matches!(
+            cli.command,
+            super::Command::CliCommands { json: true }
+        ));
     }
 }

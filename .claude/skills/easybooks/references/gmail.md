@@ -1,14 +1,3 @@
----
-name: easybooks-gmail
-description: Scan Gmail for receipts and invoices and record them into EasyBooks. v1 — the agent reads candidate messages via the connected Gmail MCP, extracts each to Entry JSON with source_id = the Gmail message id (so re-scans never double-record), then records with `easybooks gmail record`. Native OAuth sync (`gmail sync`) is a v2 stub today. Requires connect-easybooks first. See easybooks-capabilities for the full router and JSON shapes.
-when_to_use: |-
-  Trigger phrases:
-    - "scan my Gmail / inbox for receipts / invoices and record them"
-    - "find purchase receipts in my email and add them to EasyBooks"
-    - "import my email receipts into the books"
-    - "go through my Gmail and log the expenses"
----
-
 ## Shared platform token (host agent — mandatory)
 
 - Canonical durable user credential: `~/.jackyzhang.app/token/user.json` (`jz_` only).
@@ -46,7 +35,7 @@ Hard rules:
 
 # EasyBooks ↔ Gmail (v1)
 
-All recording goes through the bundled `easybooks` CLI. Resolve it once via `easybooks-capabilities/SKILL.md` §B and invoke that exact path; do not rely on ambient `PATH`.
+All recording goes through the bundled `easybooks` CLI. Resolve it once via `the easybooks router/SKILL.md` §B and invoke that exact path; do not rely on ambient `PATH`.
 
 ## How v1 works (read this first)
 
@@ -82,7 +71,7 @@ Notes:
 
 ## Step 2 — read each candidate and extract to Entry JSON
 
-For each promising message, open it via the Gmail MCP, read the body (and parse any PDF/image attachment the same way `easybooks-record` describes), and build one Entry. Capture the **Gmail message id** as `source_id`.
+For each promising message, open it via the Gmail MCP, read the body (and parse any PDF/image attachment the same way `references/record.md` describes), and build one Entry. Capture the **Gmail message id** as `source_id`.
 
 **ALWAYS set `source_payload.from` to the email's sender (the From address) on every entry.** The classifier learns business-vs-personal **by sender**, so the From address is what powers self-learning: once the user corrects a sender's classification, future receipts from that same sender are classified automatically. An entry missing `from` cannot be learned on. (Aggregator senders like paypal.com / stripe.com forward many different merchants, so the system does not learn on those — still record `from`, but expect to classify per-receipt.)
 
@@ -159,6 +148,6 @@ In v2 the CLI gains native Gmail OAuth: `gmail sync` will pull candidate receipt
 
 ## Governance
 
-- The CLI **defaults to the PROD backend** (`https://easybooks.jackyzhang.app`, the immicore eb-plugin via the eb frontend nginx `/api` proxy); the legacy Node `http://localhost:8080` is no longer the default. Override to test (`https://easybooks-test.jackyzhang.app`) or LAN (`http://192.168.1.69:8310`) via `--base-url`. Recording there is a production mutation: require the explicit current-session authorization named by the platform-vault project card (see `easybooks-capabilities` §G), or stop.
+- The CLI **defaults to the PROD backend** (`https://easybooks.jackyzhang.app`, the immicore eb-plugin via the eb frontend nginx `/api` proxy); the legacy Node `http://localhost:8080` is no longer the default. Override to test (`https://easybooks-test.jackyzhang.app`) or LAN (`http://192.168.1.69:8310`) via `--base-url`. Recording there is a production mutation: require the explicit current-session authorization named by the platform-vault project card (see `the easybooks router` §G), or stop.
 - Recording requires write scope. If the CLI returns a scope/permission error, the user's platform token lacks it — have them recheck their Portal token scope. Do not send them to the EasyBooks web app to mint an API key; `eb_live_` keys are retired.
 - Never print the user's platform token; show masked identifiers only. It lives in `~/.jackyzhang.app/token/user.json`. The Gmail MCP's own credentials are separate and managed by that integration — don't echo those either.

@@ -46,6 +46,11 @@ jobs:
           bash scripts/sync-skills.sh
           "$HOME/.cargo/bin/cargo" clippy --workspace --all-targets -- -D warnings
           "$HOME/.cargo/bin/cargo" test --workspace --all-targets
+          "$HOME/.cargo/bin/cargo" build --release --bin easybooks
+          BIN="$("$HOME/.cargo/bin/cargo" metadata --format-version 1 --no-deps | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')/release/easybooks"
+          python3 scripts/assert-skill-surface.py \
+            --bin "$BIN" \
+            --skills "$(pwd)/.claude/skills/easybooks"
 
       - name: Build release binaries
         run: |

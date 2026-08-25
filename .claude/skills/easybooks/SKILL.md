@@ -1,12 +1,62 @@
 ---
-name: easybooks-capabilities
-description: READ THIS FIRST. One-page consumption contract for AI agents using EasyBooks. Tells you exactly which EasyBooks skill / command to call for any user intent (record an expense/income, drop a receipt/invoice file, create or send an invoice, scan Gmail for receipts, list categories/clients/invoices, health/doctor, connect), how to resolve the bundled binary, what runs locally vs through the backend, and the production governance gate. Read this before guessing parameters or trying commands.
+name: easybooks
+description: >-
+  READ THIS FIRST for EasyBooks. Bookkeeping for self-employed Canadians:
+  record this receipt, log a $X expense/income, I dropped a file / invoice /
+  screenshot, here's a receipt / supplier invoice / screenshot / scanned PDF —
+  record it, import this spreadsheet / bank statement / CSV of expenses,
+  what categories do I have, create an invoice, send invoice X, bill a client,
+  scan my Gmail for receipts, find purchase receipts in my email, import my
+  email receipts, go through my Gmail and log the expenses, list my
+  categories/clients/invoices, connect EasyBooks, log in / save my jz_
+  platform token, tell Jacky. One discovery file; playbooks in references/.
+  Ask the live CLI (`easybooks commands --json`), never from memory of an
+  older release.
 when_to_use: |-
   Load on plugin start; reload whenever a user asks anything EasyBooks-related.
-  Trigger phrases: "record this receipt", "log a $X expense/income", "I dropped a file / invoice / screenshot",
-  "create an invoice", "send invoice X", "scan my Gmail for receipts", "list my categories/clients/invoices",
-  "is EasyBooks healthy / which backend am I on", "connect EasyBooks".
+  Trigger phrases: "record this receipt", "log a $X expense/income",
+  "I dropped a file / invoice / screenshot", "create an invoice",
+  "send invoice X", "scan my Gmail for receipts",
+  "list my categories/clients/invoices",
+  "is EasyBooks healthy / which backend am I on", "connect EasyBooks",
+  "connect to easybooks / set up easybooks",
+  "log in to easybooks / save my jz_ platform token",
+  "configure the easybooks plugin / use this key + base url",
+  "scan my Gmail / inbox for receipts / invoices and record them",
+  "find purchase receipts in my email and add them to EasyBooks",
+  "import my email receipts into the books",
+  "go through my Gmail and log the expenses",
+  "create / draft / make an invoice for <client> for <items>",
+  "bill <client> $X for <work>",
+  "send invoice <id> / email this invoice / email the receipt",
+  "list my invoices / which invoices are unpaid / find client <name>",
+  "log / record a $X expense for <thing> on <date>",
+  "record this income / payment I received",
+  "here's a receipt / supplier invoice / screenshot / scanned PDF — record it",
+  "import this spreadsheet / bank statement / CSV of expenses",
+  "what categories do I have", "tell Jacky".
 ---
+
+# EasyBooks plugin — agent consumption contract
+
+## Talk to the human (mandatory)
+
+Speak in everyday words. Say what you are doing and what happens next. Do not
+lead with binary paths, `--help`, or raw JSON. Keep CLI and JSON between
+tools. Never show credentials, bank data, or receipt contents in chat unless
+the user asked for that detail.
+
+## Live CLI surface (fail-closed)
+
+Ask the live CLI, never from memory of an older release:
+
+```bash
+"$EASYBOOKS_BIN" commands --json
+```
+
+Playbooks: [connect](references/connect.md), [record](references/record.md),
+[invoice](references/invoice.md), [gmail](references/gmail.md),
+[tell-jacky](references/tell-jacky.md).
 
 ## Shared platform token (host agent — mandatory)
 
@@ -54,7 +104,7 @@ EasyBooks is a self-employed (Canadian) finance app: income/expense transactions
 1. **All EasyBooks system operations go through the bundled CLI.** Reads (categories / clients / invoices), recording income/expense, importing parsed documents, creating invoices, and sending invoices must use `<easybooks> ...`. Do **not** call EasyBooks backend endpoints directly and do **not** write to Supabase / any database directly. The CLI is the only boundary.
 2. **Local file parsing is allowed only before the CLI boundary.** The agent may read Excel, CSV, PDF, image (receipt photo / scan), email, or plain text locally to extract facts. The moment data is recorded, listed, or mutated, call the CLI.
 3. **Never guess ids.** Resolve category names and client names to ids by recording with names (the backend resolves them) or by listing first (`categories list`, `clients find`, `invoices list`). Do not invent a `category_id` or `client_id`.
-4. **Idempotency is mandatory for any recorded document.** Every parsed receipt / invoice / email row carries a stable `source_id`. Re-running the same import must not double-record. For Gmail, `source_id` is the Gmail message id (see `easybooks-gmail`).
+4. **Idempotency is mandatory for any recorded document.** Every parsed receipt / invoice / email row carries a stable `source_id`. Re-running the same import must not double-record. For Gmail, `source_id` is the Gmail message id (see `references/gmail.md`).
 5. **Production is the default; writes are gated.** The CLI defaults to the PROD backend (`https://easybooks.jackyzhang.app`, the immicore eb-plugin via the eb frontend nginx `/api` proxy). Override to test (`https://easybooks-test.jackyzhang.app`) or LAN (`http://192.168.1.69:8310`) via `--base-url`. Follow the current platform-vault project card and require its current-session authorization before a production mutation — see §G.
 
 ## Agent quick router — TOP 20 LINES (read this first)
@@ -63,31 +113,31 @@ User said this → call this exact command (binary resolution: §B; file-drop de
 
 | User intent | Command (one-hop preferred) | Skill |
 |---|---|---|
-| "record / log a $X **expense** for `<thing>` on `<date>`" | `easybooks expense add --amount <d> --description "<t>" --date <YYYY-MM-DD> [--category <name>] [--classification business\|personal]` | easybooks-record |
-| "record / log a $X **income** / payment received on `<date>`" | `easybooks income add --amount <d> --description "<t>" --date <YYYY-MM-DD> [--category <name>]` | easybooks-record |
-| "here's a **receipt / invoice file** (PDF / image / Excel / CSV / email / text) — record it" | parse locally → build Entry JSON (§2) → `easybooks tx import-json --json '<json>' --dry-run` → show user → rerun without `--dry-run` | easybooks-record |
-| "record **several** transactions / a statement / a spreadsheet of expenses" | parse locally → batch Entry JSON → `easybooks tx import-json --json '<json>' --dry-run` → confirm → rerun | easybooks-record |
-| "this is **personal / mixed**, not business" / "**fix the classification**" | `easybooks tx reclassify <id> --class business\|mixed\|personal [--learn]` (`--learn` remembers the sender) | easybooks-record |
-| "**attach** the receipt / PDF to this transaction" | `easybooks tx attach-receipt <id> --file <path>` (reads locally, <=10MB, base64; prints `receipt_url`) | easybooks-record |
-| "**create an invoice** for `<client>` for `<items>`" | resolve client → build invoice JSON (§2) → `easybooks invoice create --json '<json>' --dry-run` → confirm → rerun | easybooks-invoice |
-| "**send** invoice `<id>` / email the invoice/receipt" | `easybooks invoice send <invoice_id>` (CONFIRM first — it emails the client) | easybooks-invoice |
-| "**scan my Gmail** for receipts / invoices and record them" | read candidates via Gmail MCP → extract to Entry JSON with `source_id` = Gmail message id → `easybooks gmail record --json '<json>' --dry-run` → confirm → rerun | easybooks-gmail |
-| "**find / search** a transaction by type / category / date / amount / text" | `easybooks tx list [--type income\|expense] [--classification business\|mixed\|personal\|unclassified] [--review needs_review\|reviewed] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--query <q>] [--limit n]` | easybooks-record |
-| "**confirm** a transaction (clear needs-review without changing classification)" | `easybooks tx confirm <id>` | easybooks-record |
-| "**edit** a transaction (amount / date / description / category / notes)" | `easybooks tx update <id> [--amount <d>] [--date YYYY-MM-DD] [--description "<t>"] [--category <name>] [--notes "<t>"] [--dry-run]` | easybooks-record |
-| "view receipt **URL** for a transaction" | `easybooks tx receipt-url <id>` (returns signed URL) | easybooks-record |
-| "**dashboard** summary (income / expenses / net / outstanding / tax estimate)" | `easybooks dashboard [--year <YYYY>]` | easybooks-record |
-| "list my **categories**" | `easybooks categories list [--type income\|expense]` | easybooks-record |
-| "**manage categories** (create / view)" | `easybooks categories create --name <n> --type income\|expense [--tax-deductible]` | easybooks-record |
-| "**manage clients** (list / create / update / delete)" | `easybooks clients list`, `easybooks clients create --name <n> [--email --phone --address --notes]`, `easybooks clients update <id> ...`, `easybooks clients delete <id>` | easybooks-invoice |
-| "get **invoice details**" | `easybooks invoice get <id>` | easybooks-invoice |
-| "**mark invoice** paid / unpaid" | `easybooks invoice mark <id> --status paid\|unpaid` | easybooks-invoice |
-| "**download invoice** PDF" | `easybooks invoice pdf <id> [--out <path>]` | easybooks-invoice |
-| "**invoice stats** (counts / amounts by status)" | `easybooks invoice stats [--year <YYYY>]` | easybooks-invoice |
-| "list my **invoices** [that are unpaid/draft]" | `easybooks invoices list [--status <s>]` | easybooks-invoice |
+| "record / log a $X **expense** for `<thing>` on `<date>`" | `easybooks expense add --amount <d> --description "<t>" --date <YYYY-MM-DD> [--category <name>] [--classification business\|personal]` | references/record.md |
+| "record / log a $X **income** / payment received on `<date>`" | `easybooks income add --amount <d> --description "<t>" --date <YYYY-MM-DD> [--category <name>]` | references/record.md |
+| "here's a **receipt / invoice file** (PDF / image / Excel / CSV / email / text) — record it" | parse locally → build Entry JSON (§2) → `easybooks tx import-json --json '<json>' --dry-run` → show user → rerun without `--dry-run` | references/record.md |
+| "record **several** transactions / a statement / a spreadsheet of expenses" | parse locally → batch Entry JSON → `easybooks tx import-json --json '<json>' --dry-run` → confirm → rerun | references/record.md |
+| "this is **personal / mixed**, not business" / "**fix the classification**" | `easybooks tx reclassify <id> --class business\|mixed\|personal [--learn]` (`--learn` remembers the sender) | references/record.md |
+| "**attach** the receipt / PDF to this transaction" | `easybooks tx attach-receipt <id> --file <path>` (reads locally, <=10MB, base64; prints `receipt_url`) | references/record.md |
+| "**create an invoice** for `<client>` for `<items>`" | resolve client → build invoice JSON (§2) → `easybooks invoice create --json '<json>' --dry-run` → confirm → rerun | references/invoice.md |
+| "**send** invoice `<id>` / email the invoice/receipt" | `easybooks invoice send <invoice_id>` (CONFIRM first — it emails the client) | references/invoice.md |
+| "**scan my Gmail** for receipts / invoices and record them" | read candidates via Gmail MCP → extract to Entry JSON with `source_id` = Gmail message id → `easybooks gmail record --json '<json>' --dry-run` → confirm → rerun | references/gmail.md |
+| "**find / search** a transaction by type / category / date / amount / text" | `easybooks tx list [--type income\|expense] [--classification business\|mixed\|personal\|unclassified] [--review needs_review\|reviewed] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--query <q>] [--limit n]` | references/record.md |
+| "**confirm** a transaction (clear needs-review without changing classification)" | `easybooks tx confirm <id>` | references/record.md |
+| "**edit** a transaction (amount / date / description / category / notes)" | `easybooks tx update <id> [--amount <d>] [--date YYYY-MM-DD] [--description "<t>"] [--category <name>] [--notes "<t>"] [--dry-run]` | references/record.md |
+| "view receipt **URL** for a transaction" | `easybooks tx receipt-url <id>` (returns signed URL) | references/record.md |
+| "**dashboard** summary (income / expenses / net / outstanding / tax estimate)" | `easybooks dashboard [--year <YYYY>]` | references/record.md |
+| "list my **categories**" | `easybooks categories list [--type income\|expense]` | references/record.md |
+| "**manage categories** (create / view)" | `easybooks categories create --name <n> --type income\|expense [--tax-deductible]` | references/record.md |
+| "**manage clients** (list / create / update / delete)" | `easybooks clients list`, `easybooks clients create --name <n> [--email --phone --address --notes]`, `easybooks clients update <id> ...`, `easybooks clients delete <id>` | references/invoice.md |
+| "get **invoice details**" | `easybooks invoice get <id>` | references/invoice.md |
+| "**mark invoice** paid / unpaid" | `easybooks invoice mark <id> --status paid\|unpaid` | references/invoice.md |
+| "**download invoice** PDF" | `easybooks invoice pdf <id> [--out <path>]` | references/invoice.md |
+| "**invoice stats** (counts / amounts by status)" | `easybooks invoice stats [--year <YYYY>]` | references/invoice.md |
+| "list my **invoices** [that are unpaid/draft]" | `easybooks invoices list [--status <s>]` | references/invoice.md |
 | "is EasyBooks **healthy** / which backend am I on / token still valid" | `easybooks --json doctor` (local config + backend round-trip + version) | this file |
-| "**connect** EasyBooks / save my platform token / set it up" | `connect-easybooks` skill → user-local hidden entry via `easybooks login --token-stdin [--base-url <url>]` | connect-easybooks |
-| "EasyBooks **out of date**?" | `easybooks --json doctor --no-fetch --check-upgrade` | connect-easybooks |
+| "**connect** EasyBooks / save my platform token / set it up" | `references/connect.md` skill → user-local hidden entry via `easybooks login --token-stdin [--base-url <url>]` | references/connect.md |
+| "EasyBooks **out of date**?" | `easybooks --json doctor --no-fetch --check-upgrade` | references/connect.md |
 
 Routing detail below is supplementary — start with this table.
 
@@ -182,7 +232,7 @@ Use this whenever the user gives you a file or pastes content: receipt photo, sc
 5. **Show the user the resolved rows** (amount, date, category, classification, type). Get confirmation, especially for amounts and business-vs-personal classification.
 6. **Record for real:** rerun the same command **without** `--dry-run`. Output is `{ "created":n, "existing":n, "skipped":n, "skipped_personal":n, "processed":n }` — `existing` > 0 means idempotency already had those rows; that is success, not an error. `skipped_personal` > 0 means the server **dropped** entries that resolved to personal (see §1 taxonomy / self-learning) — they were intentionally not booked.
 
-Single quick one-off (no file)? Use `easybooks income add` / `easybooks expense add` directly instead of building batch JSON. Full detail: `easybooks-record`.
+Single quick one-off (no file)? Use `easybooks income add` / `easybooks expense add` directly instead of building batch JSON. Full detail: `references/record.md`.
 
 ## 2. Data shapes (do not invent fields)
 
@@ -224,7 +274,7 @@ If unsure, ask one specific question; if it stays unknown, mark it **needs-revie
 { "source_system": "gmail|receipt-drop|...", "entries": [ <Entry>... ] }
 ```
 
-**Invoice create** JSON (see `easybooks-invoice`):
+**Invoice create** JSON (see `references/invoice.md`):
 ```json
 {
   "client": { "name": "Acme Co", "email": "ap@acme.co" },   // or { "client_id": "<uuid>" }
@@ -270,10 +320,10 @@ Compact `create --json` example — auto-mark anything from a vendor domain as b
 
 | User says (any phrasing) | Skill | Entry point |
 |---|---|---|
-| "connect / set up EasyBooks / save my key" | **connect-easybooks** | `easybooks login` then `whoami` / `doctor` |
-| "log an expense / income", "record this receipt / file / image / PDF / statement", "fix a classification", "attach a receipt" | **easybooks-record** | `expense add` / `income add` / `tx import-json` / `tx reclassify` / `tx attach-receipt` |
-| "create an invoice", "send invoice X", "list my clients / invoices" | **easybooks-invoice** | `invoice create` / `invoice send` / `clients` / `invoices list` |
-| "scan my Gmail for receipts / invoices and record them" | **easybooks-gmail** | Gmail MCP read → `gmail record` |
+| "connect / set up EasyBooks / save my key" | [connect](references/connect.md) | `easybooks login` then `whoami` / `doctor` |
+| "log an expense / income", "record this receipt / file / image / PDF / statement", "fix a classification", "attach a receipt" | [record](references/record.md) | `expense add` / `income add` / `tx import-json` / `tx reclassify` / `tx attach-receipt` |
+| "create an invoice", "send invoice X", "list my clients / invoices" | [invoice](references/invoice.md) | `invoice create` / `invoice send` / `clients` / `invoices list` |
+| "scan my Gmail for receipts / invoices and record them" | [gmail](references/gmail.md) | Gmail MCP read → `gmail record` |
 | "is my plugin healthy / which backend am I on" | this file | `easybooks --json doctor` |
 
 ## 4. Complete CLI surface by responsibility

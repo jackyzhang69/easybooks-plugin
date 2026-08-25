@@ -56,6 +56,14 @@ jobs:
       - name: Cargo test (release)
         run: cargo test --release --all-targets 2>&1 | tee /tmp/cargo-test.log
 
+      - name: Skill surface vs built binary
+        run: |
+          BIN="$(cargo metadata --format-version 1 --no-deps | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')/release/easybooks"
+          python3 scripts/assert-skill-surface.py \
+            --bin "$BIN" \
+            --skills "$(pwd)/.claude/skills/easybooks"
+          python3 scripts/assert_skill_command_contract.py
+
       - name: Upload test logs on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

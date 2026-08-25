@@ -6,8 +6,7 @@ Bookkeeping for self-employed Canadians. Wraps the **EasyBooks** Rust CLI in Cod
 
 | Skill | Purpose |
 |---|---|
-| [`connect-easybooks`](./skills/connect-easybooks/SKILL.md) | One-time setup. Capture the user's platform Portal token (`jz_…`) + base URL via the CLI. Reuses `~/.jackyzhang.app/token/user.json` if any other official plugin already connected. **Run first.** |
-| [`easybooks-capabilities`](./skills/easybooks-capabilities/SKILL.md) | Agent consumption contract: mandatory CLI boundary, intent → command router, binary resolver, the "user dropped a file / pasted invoice / image / PDF / email" decision tree, and operating rules. **Read on every EasyBooks session.** |
+| [`easybooks`](./skills/easybooks/SKILL.md) | The only discovery file. Connect, record, invoice, Gmail, and tell-jacky playbooks live under `skills/easybooks/references/`. |
 | [`easybooks-record`](./skills/easybooks-record/SKILL.md) | Record income / expenses and ingest receipts and documents. File-import decision tree (Excel / CSV / PDF / image / email / text → Entry JSON → dry-run → record). Idempotency guidance. |
 | [`easybooks-invoice`](./skills/easybooks-invoice/SKILL.md) | Create and send invoices. Client resolution; dry-run before create. |
 | [`easybooks-gmail`](./skills/easybooks-gmail/SKILL.md) | Read candidate receipts / invoices via the connected Gmail MCP, extract them, and record with `easybooks gmail record` (source id = Gmail message id → no double-recording). v2 native OAuth sync is documented as coming. |
@@ -22,7 +21,7 @@ Drop a receipt or an invoice — or ask the agent to scan your connected Gmail f
 - The agent may read local text / image / PDF / email content itself to extract structured data, but the moment data is recorded, listed, or mutated it goes through `easybooks ...`.
 - New transactions from files / email use: parse locally → `easybooks tx import-json --dry-run` → confirm → `easybooks tx import-json`.
 - Invoices use: prepare JSON → `easybooks invoice create --dry-run` → confirm → `easybooks invoice create`, then optionally `easybooks invoice send <invoice_id>`.
-- Runtime truth is the bundled binary's `--help` plus `easybooks-capabilities`.
+- Runtime truth is `easybooks commands --json` plus the `easybooks` router skill. Never from memory of an older release.
 
 ## The only thing the user inputs
 

@@ -1,8 +1,3 @@
----
-name: tell-jacky
-description: Submit EasyBooks product feedback to Jacky via portal product_feedback.
----
-
 ## Shared platform token (host agent — mandatory)
 
 - Canonical durable user credential: `~/.jackyzhang.app/token/user.json` (`jz_` only).

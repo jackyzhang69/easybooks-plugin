@@ -1,14 +1,3 @@
----
-name: easybooks-invoice
-description: Create and send EasyBooks invoices. Resolve the client (find existing or create new), build the invoice JSON, dry-run to preview server-computed totals, confirm, then create. Send emails the invoice/receipt to the client — confirm before sending. Requires connect-easybooks first. See easybooks-capabilities for the full router and JSON shapes.
-when_to_use: |-
-  Trigger phrases:
-    - "create / draft / make an invoice for <client> for <items>"
-    - "bill <client> $X for <work>"
-    - "send invoice <id> / email this invoice / email the receipt"
-    - "list my invoices / which invoices are unpaid / find client <name>"
----
-
 ## Shared platform token (host agent — mandatory)
 
 - Canonical durable user credential: `~/.jackyzhang.app/token/user.json` (`jz_` only).
@@ -46,7 +35,7 @@ Hard rules:
 
 # EasyBooks invoices
 
-All commands shell out to the bundled `easybooks` CLI. Resolve it once via `easybooks-capabilities/SKILL.md` §B and invoke that exact path; do not rely on ambient `PATH`. All output is JSON on stdout; structured errors go to stderr with a non-zero exit.
+All commands shell out to the bundled `easybooks` CLI. Resolve it once via `the easybooks router/SKILL.md` §B and invoke that exact path; do not rely on ambient `PATH`. All output is JSON on stdout; structured errors go to stderr with a non-zero exit.
 
 **Cardinal rule:** invoice creation and sending go through the bundled CLI only — never a direct backend request or database write. The server computes totals and generates the invoice number; do not compute or invent those yourself.
 
@@ -150,6 +139,6 @@ Use this for "which invoices are unpaid", "show me last month's invoices", or to
 
 ## Governance
 
-- The CLI **defaults to the PROD backend** (`https://easybooks.jackyzhang.app`, the immicore eb-plugin via the eb frontend nginx `/api` proxy); the legacy Node `http://localhost:8080` is no longer the default. Override to test (`https://easybooks-test.jackyzhang.app`) or LAN (`http://192.168.1.69:8310`) via `--base-url`. Creating or sending an invoice there is a production mutation: require the explicit current-session authorization named by the platform-vault project card (see `easybooks-capabilities` §G), or stop. `invoice send` emails a real client.
+- The CLI **defaults to the PROD backend** (`https://easybooks.jackyzhang.app`, the immicore eb-plugin via the eb frontend nginx `/api` proxy); the legacy Node `http://localhost:8080` is no longer the default. Override to test (`https://easybooks-test.jackyzhang.app`) or LAN (`http://192.168.1.69:8310`) via `--base-url`. Creating or sending an invoice there is a production mutation: require the explicit current-session authorization named by the platform-vault project card (see `the easybooks router` §G), or stop. `invoice send` emails a real client.
 - Creating and sending invoices require write scope. If the CLI returns a scope/permission error, the user's platform token lacks it — have them recheck their Portal token scope. Do not send them to the EasyBooks web app to mint an API key; `eb_live_` keys are retired.
 - Never print the user's platform token; show masked identifiers only. It lives in `~/.jackyzhang.app/token/user.json`.

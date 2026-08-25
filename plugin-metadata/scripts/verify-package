@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# verify-package: read-only package shape gate for the EasyBooks plugin tree.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+test -f "$ROOT/runtime-manifest.json"
+test -f "$ROOT/.claude-plugin/plugin.json"
+test -f "$ROOT/skills/easybooks/SKILL.md"
+count="$(find "$ROOT/skills" -name SKILL.md | wc -l | tr -d ' ')"
+test "$count" = "1" || { echo "verify-package: expected 1 SKILL.md, found $count" >&2; exit 1; }
+if [ -d "$ROOT/bin" ]; then
+  test -d "$ROOT/bin/darwin-arm64"
+  test -d "$ROOT/bin/win32-x64"
+fi
+echo "verify-package: ok"

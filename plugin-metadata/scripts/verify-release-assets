@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# verify-release-assets: require the two public binaries when present.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [ ! -d "$ROOT/bin" ]; then
+  echo "verify-release-assets: no bin/ (source metadata tree); skip"
+  exit 0
+fi
+test -f "$ROOT/bin/darwin-arm64/easybooks" || { echo "missing darwin-arm64 binary" >&2; exit 1; }
+test -f "$ROOT/bin/win32-x64/easybooks.exe" || { echo "missing win32-x64 binary" >&2; exit 1; }
+echo "verify-release-assets: ok"
