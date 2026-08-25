@@ -1,0 +1,17 @@
+# EasyBooks official marketplace publication is the "Official marketplace publish"
+# step in build-sign-plugin (.github/workflows/publish.yml) after signed binaries
+# exist. This file exists so the shared path is discoverable; do not add a second
+# tag publisher here (mac-only build-local.sh is not an official release).
+name: publish-official-plugin
+on:
+  workflow_dispatch:
+    inputs:
+      note:
+        description: Use build-sign-plugin on a plugin-v* tag instead
+        required: false
+        default: "noop"
+jobs:
+  hint:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Official EasyBooks marketplace publish is .github/workflows/publish.yml on plugin-v* tags."

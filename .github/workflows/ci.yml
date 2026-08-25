@@ -59,7 +59,7 @@ jobs:
       - name: Skill surface vs built binary
         run: |
           BIN="$(cargo metadata --format-version 1 --no-deps | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')/release/easybooks"
-          python3 scripts/assert-skill-surface.py \
+          python3 scripts/official-plugin/assert-skill-surface.py \
             --bin "$BIN" \
             --skills "$(pwd)/.claude/skills/easybooks"
           python3 scripts/assert_skill_command_contract.py

@@ -187,6 +187,25 @@ jobs:
             --title "EasyBooks CLI $VERSION" \
             --notes "Signed EasyBooks plugin stage built from immutable source ${{ github.sha }}."
 
+      - name: Load plugins deploy key
+        if: env.IS_TAG == 'true'
+        uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd
+        with:
+          ssh-private-key: ${{ secrets.PLUGINS_REPO_DEPLOY_KEY }}
+      - name: Official marketplace publish
+        if: env.IS_TAG == 'true'
+        env:
+          PLUGINS_REPO_DEPLOY_KEY: ${{ secrets.PLUGINS_REPO_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          bash scripts/assemble-official-plugin.sh "$STAGE" "$RUNNER_TEMP/easybooks-cli"
+          git clone --branch main "git@github.com:jackyzhang69/plugins.git" "$RUNNER_TEMP/plugins-repo"
+          python3 scripts/official-plugin/publish-official-plugin.py \
+            --plugin-id easybooks \
+            --staged "$RUNNER_TEMP/easybooks-cli" \
+            --marketplace "$RUNNER_TEMP/plugins-repo" \
+            --apply --git-push
+
       - name: Teardown isolated signing keychain
         if: always()
         run: |
