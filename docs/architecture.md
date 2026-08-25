@@ -75,9 +75,10 @@ directly. It deliberately does not. A single CLI boundary buys:
 - **One auditable surface.** Every EasyBooks mutation flows through one binary
   with one auth header (`Authorization: Bearer <api_key>`), making it easy to
   reason about what can write to the books.
-- **Secret containment.** The user's API key lives only in
-  `~/.easybooks/config.json`. The agent never sees, prints, or stores it; the
-  CLI masks it as `eb_***` anywhere it would surface.
+- **Secret containment.** The user's Portal token lives only in
+  `~/.jackyzhang.app/token/user.json`. Runtime config is
+  `~/.jackyzhang.app/easybooks/config.json`. The agent never sees, prints, or stores
+  the token; the CLI masks it anywhere it would surface.
 - **No id guessing.** Reads (`categories`, `clients`, `invoices`) let the agent
   resolve human names to the ids the backend expects, instead of inventing them.
 - **Stable contract.** Skills, CI, and the backend all conform to the command

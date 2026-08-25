@@ -1,6 +1,10 @@
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{env, fs, io::Write, path::PathBuf};
+use std::{
+    env, fs,
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 /// Default backend: the PROD immicore-served eb-plugin, reached via the eb
 /// frontend domain's nginx `/api` proxy (`https://easybooks.jackyzhang.app`
@@ -135,25 +139,49 @@ pub fn config_path_buf() -> Result<PathBuf> {
     config_file_path()
 }
 
+fn platform_home() -> Result<PathBuf> {
+    if let Ok(override_home) = env::var("JACKYZHANG_APP_HOME") {
+        let override_home = override_home.trim();
+        if !override_home.is_empty() {
+            return Ok(PathBuf::from(override_home));
+        }
+    }
+    let home = dirs::home_dir().context("HOME is not set")?;
+    Ok(home.join(".jackyzhang.app"))
+}
+
 fn config_file_path() -> Result<PathBuf> {
+    Ok(platform_home()?.join("easybooks").join("config.json"))
+}
+
+fn legacy_config_file_path() -> Result<PathBuf> {
     let home = dirs::home_dir().context("HOME is not set")?;
     Ok(home.join(".easybooks").join("config.json"))
 }
 
 fn portal_token_path() -> Result<PathBuf> {
-    if let Ok(override_home) = env::var("JACKYZHANG_APP_HOME") {
-        let override_home = override_home.trim();
-        if !override_home.is_empty() {
-            return Ok(PathBuf::from(override_home).join("token").join("user.json"));
-        }
-    }
-    let home = dirs::home_dir().context("HOME is not set")?;
-    Ok(home.join(".jackyzhang.app").join("token").join("user.json"))
+    Ok(platform_home()?.join("token").join("user.json"))
 }
 
-fn read_config_file() -> Result<Option<ConfigFile>> {
-    let path = config_file_path()?;
-    match fs::symlink_metadata(&path) {
+fn parse_config_bytes(raw: &str, path: &Path) -> Result<ConfigFile> {
+    if let Ok(file) = serde_json::from_str::<ConfigFile>(raw) {
+        return Ok(file);
+    }
+    #[derive(Deserialize)]
+    struct Legacy {
+        api_key: String,
+        base_url: String,
+    }
+    let legacy: Legacy =
+        serde_json::from_str(raw).with_context(|| format!("parsing {}", path.display()))?;
+    Ok(ConfigFile {
+        api_key: Some(legacy.api_key),
+        base_url: legacy.base_url,
+    })
+}
+
+fn read_config_at(path: &Path) -> Result<Option<ConfigFile>> {
+    match fs::symlink_metadata(path) {
         Ok(metadata) => {
             if metadata.file_type().is_symlink() || !metadata.is_file() {
                 bail!("config path is not a regular file: {}", path.display());
@@ -162,23 +190,25 @@ fn read_config_file() -> Result<Option<ConfigFile>> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(e).with_context(|| format!("stat {}", path.display())),
     }
-    let raw = fs::read_to_string(&path)
-        .with_context(|| format!("reading {}", path.display()))?;
-    // Backward compat: old shape had required string api_key.
-    if let Ok(file) = serde_json::from_str::<ConfigFile>(&raw) {
+    let raw = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    Ok(Some(parse_config_bytes(&raw, path)?))
+}
+
+fn read_config_file() -> Result<Option<ConfigFile>> {
+    if let Some(file) = read_config_at(&config_file_path()?)? {
         return Ok(Some(file));
     }
-    #[derive(Deserialize)]
-    struct Legacy {
-        api_key: String,
-        base_url: String,
+    let Some(legacy) = read_config_at(&legacy_config_file_path()?)? else {
+        return Ok(None);
+    };
+    save_config(None, &legacy.base_url)?;
+    if let Some(key) = legacy.api_key.as_ref() {
+        let key = key.trim();
+        if key.starts_with("jz_") && !key.chars().any(char::is_whitespace) {
+            let _ = save_portal_owner_token(key);
+        }
     }
-    let legacy: Legacy = serde_json::from_str(&raw)
-        .with_context(|| format!("parsing {}", path.display()))?;
-    Ok(Some(ConfigFile {
-        api_key: Some(legacy.api_key),
-        base_url: legacy.base_url,
-    }))
+    read_config_at(&config_file_path()?)
 }
 
 /// Persist product-local runtime config (base_url only). Never stores portal owner tokens.
@@ -197,6 +227,9 @@ pub fn save_config(api_key: Option<&str>, base_url: &str) -> Result<()> {
         {
             use std::os::unix::fs::PermissionsExt;
             let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
+            if let Some(root) = parent.parent() {
+                let _ = fs::set_permissions(root, fs::Permissions::from_mode(0o700));
+            }
         }
     }
     if let Ok(metadata) = fs::symlink_metadata(&path) {
@@ -263,14 +296,7 @@ pub fn save_portal_owner_token(token: &str) -> Result<()> {
 
 /// Shared durable admin slot for private admin feedback ops.
 pub fn admin_token_path() -> Result<PathBuf> {
-    if let Ok(override_home) = env::var("JACKYZHANG_APP_HOME") {
-        let override_home = override_home.trim();
-        if !override_home.is_empty() {
-            return Ok(PathBuf::from(override_home).join("token").join("admin.json"));
-        }
-    }
-    let home = dirs::home_dir().context("HOME is not set")?;
-    Ok(home.join(".jackyzhang.app").join("token").join("admin.json"))
+    Ok(platform_home()?.join("token").join("admin.json"))
 }
 
 pub fn read_admin_token() -> Result<Option<String>> {
@@ -419,16 +445,14 @@ fn migrate_legacy_portal_token() -> Result<Option<String>> {
         return Ok(Some(token));
     }
 
-    // 2) product-local ~/.easybooks/config.json api_key when it is already jz_
-    let product = config_file_path()?;
-    if product.exists() {
-        if let Ok(Some(file)) = read_config_file() {
+    // 2) product-local config.json api_key when it is already jz_
+    for path in [config_file_path()?, legacy_config_file_path()?] {
+        if let Ok(Some(file)) = read_config_at(&path) {
             if let Some(key) = file.api_key.as_ref() {
                 let key = key.trim();
                 if key.starts_with("jz_") && !key.chars().any(char::is_whitespace) {
                     let token = key.to_string();
                     save_portal_owner_token(&token)?;
-                    // scrub api_key; keep base_url
                     let _ = save_config(None, &file.base_url);
                     return Ok(Some(token));
                 }

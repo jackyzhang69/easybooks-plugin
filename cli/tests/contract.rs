@@ -10,7 +10,7 @@
 //!
 //! Config is supplied via env (`EASYBOOKS_API_KEY` / `EASYBOOKS_API_URL` /
 //! `EASYBOOKS_ACCOUNTD_URL`) so the tests are hermetic and don't touch
-//! `~/.easybooks/config.json`.
+//! `~/.jackyzhang.app/easybooks/config.json`.
 
 use assert_cmd::Command;
 use mockito::Matcher;
@@ -306,7 +306,7 @@ fn login_writes_config_and_masks_key() {
     assert!(slot.is_file(), "shared user.json should be written");
     let slot_raw = std::fs::read_to_string(&slot).expect("read user.json");
     assert!(slot_raw.contains("jz_super_secret_value"));
-    let cfg = home.path().join(".easybooks").join("config.json");
+    let cfg = runtime_config_path(home.path());
     assert!(cfg.is_file(), "runtime config.json should be written");
     let cfg_raw = std::fs::read_to_string(&cfg).expect("read runtime config");
     assert!(!cfg_raw.contains("jz_super_secret_value"), "token must not live in product config");
@@ -321,10 +321,40 @@ fn login_writes_config_and_masks_key() {
             .permissions()
             .mode()
             & 0o777;
-        assert_eq!(directory_mode, 0o700, ".easybooks must be mode 0700");
+        assert_eq!(directory_mode, 0o700, "easybooks runtime dir must be mode 0700");
         let slot_mode = std::fs::metadata(&slot).unwrap().permissions().mode() & 0o777;
         assert_eq!(slot_mode, 0o600, "user.json must be mode 0600");
     }
+}
+
+#[test]
+fn loads_legacy_easybooks_home_and_migrates_to_unified_runtime() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let legacy_dir = home.path().join(".easybooks");
+    std::fs::create_dir(&legacy_dir).expect("legacy dir");
+    std::fs::write(
+        legacy_dir.join("config.json"),
+        r#"{"api_key":"jz_legacy_migrated_token","base_url":"http://192.168.1.69:8310"}"#,
+    )
+    .expect("write legacy config");
+
+    easybooks()
+        .env("HOME", home.path())
+        .arg("whoami")
+        .assert()
+        .failure(); // no backend in this test; migration must still have run
+
+    let migrated = runtime_config_path(home.path());
+    assert!(migrated.is_file(), "unified runtime config should be written");
+    let migrated_raw = std::fs::read_to_string(&migrated).expect("read migrated config");
+    assert!(migrated_raw.contains("192.168.1.69:8310"));
+    assert!(
+        !migrated_raw.contains("jz_legacy_migrated_token"),
+        "migrated runtime config must not keep the portal token"
+    );
+    let slot = home.path().join(".jackyzhang.app").join("token").join("user.json");
+    let slot_raw = std::fs::read_to_string(&slot).expect("read migrated user.json");
+    assert!(slot_raw.contains("jz_legacy_migrated_token"));
 }
 
 #[test]
@@ -361,7 +391,7 @@ fn login_rejects_empty_or_multiline_stdin() {
             .failure()
             .stdout(predicate::str::contains("jz_").not())
             .stderr(predicate::str::contains("jz_").not());
-        assert!(!home.path().join(".easybooks/config.json").exists());
+        assert!(!runtime_config_path(home.path()).exists());
     }
 }
 
@@ -372,7 +402,9 @@ fn login_rejects_symlinked_config_directory() {
 
     let home = tempfile::tempdir().expect("home");
     let outside = tempfile::tempdir().expect("outside");
-    symlink(outside.path(), home.path().join(".easybooks")).expect("create symlink");
+    let app = home.path().join(".jackyzhang.app");
+    std::fs::create_dir(&app).expect("create platform home");
+    symlink(outside.path(), app.join("easybooks")).expect("create symlink");
 
     easybooks()
         .env("HOME", home.path())
@@ -392,8 +424,8 @@ fn login_and_load_reject_symlinked_config_file() {
     use std::os::unix::fs::symlink;
 
     let home = tempfile::tempdir().expect("home");
-    let config_directory = home.path().join(".easybooks");
-    std::fs::create_dir(&config_directory).expect("create config directory");
+    let config_directory = home.path().join(".jackyzhang.app").join("easybooks");
+    std::fs::create_dir_all(&config_directory).expect("create config directory");
     let outside = home.path().join("outside-config.json");
     std::fs::write(&outside, "must remain unchanged").expect("write outside target");
     symlink(&outside, config_directory.join("config.json")).expect("create config symlink");
@@ -427,14 +459,18 @@ fn login_rejects_oversized_stdin() {
         .write_stdin("x".repeat(4097))
         .assert()
         .failure();
-    assert!(!home.path().join(".easybooks/config.json").exists());
+    assert!(!runtime_config_path(home.path()).exists());
 }
 
-/// Read back the `base_url` persisted to `<home>/.easybooks/config.json`.
+/// Read back the `base_url` persisted to the unified runtime config.
 /// Tests run the binary with an isolated `HOME`, so this is the exact value
 /// `login` wrote to disk (not the echoed stdout, though they must agree).
+fn runtime_config_path(home: &std::path::Path) -> std::path::PathBuf {
+    home.join(".jackyzhang.app").join("easybooks").join("config.json")
+}
+
 fn persisted_base_url(home: &std::path::Path) -> String {
-    let cfg = home.join(".easybooks").join("config.json");
+    let cfg = runtime_config_path(home);
     let data = std::fs::read_to_string(&cfg).expect("config.json should exist after login");
     let json: serde_json::Value = serde_json::from_str(&data).expect("config.json is valid JSON");
     json["base_url"]

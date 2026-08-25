@@ -16,9 +16,9 @@
     "binaryOverrideEnvVar": "EASYBOOKS_BIN"
   },
   "configHome": {
-    "darwin": "${HOME}/.easybooks",
-    "linux": "${HOME}/.easybooks",
-    "win32": "${USERPROFILE}/.easybooks"
+    "darwin": "${HOME}/.jackyzhang.app/easybooks",
+    "linux": "${HOME}/.jackyzhang.app/easybooks",
+    "win32": "${USERPROFILE}/.jackyzhang.app/easybooks"
   },
   "configFile": "config.json",
   "defaultBaseUrl": "https://easybooks.jackyzhang.app"

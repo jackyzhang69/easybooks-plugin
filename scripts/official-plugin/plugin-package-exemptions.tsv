@@ -1,5 +1,4 @@
 # plugin_id	check	expires_on
 # Dated exemptions only. Expired date = FAIL.
 # No exemption for host-os-floor, missing commands --json, or multiple SKILL.md.
-easybooks-cli	runtime-storage	2026-09-25
 formbro-cli	runtime-storage	2026-09-25

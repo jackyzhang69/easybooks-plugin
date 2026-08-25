@@ -24,7 +24,7 @@ endpoint pattern we are extending: `POST /api/integrations/audit/stripe-payouts`
 - Display name: `EasyBooks`
 - CLI binary name: `easybooks`
 - Rust crate: package `easybooks-cli`, `[[bin]] name = "easybooks"`, lib `easybooks_cli`
-- Config file: `~/.easybooks/config.json`
+- Config file: `~/.jackyzhang.app/easybooks/config.json` (legacy `~/.easybooks/config.json` is migrated on read)
 - Binary override env: `$EASYBOOKS_BIN`
 - Version: `0.1.0` (workspace-inherited)
 - Marketplace repo (published plugin): `jackyzhang69/plugins` (same marketplace as formbro)
@@ -65,15 +65,13 @@ Commands:
 
 ### Setup / health
 - `easybooks login --token-stdin [--base-url <url>]`
-  Persists `{ api_key, base_url }` to `~/.easybooks/config.json` (mode 0600).
-  The CLI reads the user's personal EasyBooks API key (`eb_live_...`) from a hidden
-  terminal prompt or bounded piped stdin; it is never accepted in argv. The key is generated in the
-  EasyBooks web app (Settings → API Keys), scope `read` or `read_write`. It both
-  authenticates AND identifies the user — there is NO separate owner id. `--base-url`
+  Persists `{ base_url }` to `~/.jackyzhang.app/easybooks/config.json` (mode 0600)
+  and the portal `jz_` to the shared `~/.jackyzhang.app/token/user.json` slot.
+  Token input is `--token-stdin` only; never argv. `--base-url`
   default `https://easybooks.jackyzhang.app` (PROD, immicore-served eb-plugin via the
   eb frontend nginx `/api` proxy). Override for test:
   `https://easybooks-test.jackyzhang.app`; for LAN: `http://192.168.1.69:8310`.
-  Output: `{"status":"ok","path":"~/.easybooks/config.json","base_url":"...","api_key_masked":"eb_***"}`.
+  Output: `{"status":"ok","path":".../easybooks/config.json","base_url":"...","api_key_masked":"jz_***"}`.
 - `easybooks whoami`
   Calls `GET /api/integrations/whoami` (the key identifies the user). Output:
   `{ base_url, user_id, email?, scope, api_key_masked }` (user_id, optional email, and scope come from the whoami response).
@@ -239,7 +237,7 @@ CI/packaging copy them into the published bundle. Document the chosen mechanism 
   **LAN** (`http://192.168.1.69:8310`). Because the default is production, any **write** command (record,
   import, invoice create/send) is a production write: it is gated by the current platform-vault project card, and the
   skills must warn the user before any production write.
-- The user's API key is a secret: never printed/logged; lives only in `~/.easybooks/config.json` (CLI).
+- The user's Portal token is a secret: never printed/logged; lives only in `~/.jackyzhang.app/token/user.json`. Runtime config is `~/.jackyzhang.app/easybooks/config.json`.
   Keys are minted per-user in the EasyBooks web app and carry a scope (`read` / `read_write`); a user
   rotates/revokes their own key there. We do NOT generate secret values in this build.
 - DO NOT deploy the backend change to production and DO NOT apply migrations to any DB in this build.

@@ -63,7 +63,7 @@ jobs:
           CODESIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_NOTARIZE_PASS: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
         run: |
@@ -71,7 +71,7 @@ jobs:
           test -n "$CODESIGN_IDENTITY"
           test -n "$APPLE_ID"
           test -n "$APPLE_TEAM_ID"
-          test -n "$APPLE_NOTARIZE_PASS"
+          test -n "$APPLE_APP_SPECIFIC_PASSWORD"
           test -n "$CSC_LINK"
           test -n "$CSC_KEY_PASSWORD"
 
@@ -82,49 +82,7 @@ jobs:
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          KEYCHAIN="$RUNNER_TEMP/easybooks-plugin-signing-${GITHUB_RUN_ID}.keychain-db"
-          P12="$RUNNER_TEMP/easybooks-plugin-certificate-${GITHUB_RUN_ID}.p12"
-          ORIG_DEFAULT="$RUNNER_TEMP/easybooks-plugin-orig-default-${GITHUB_RUN_ID}"
-          ORIG_SEARCH="$RUNNER_TEMP/easybooks-plugin-orig-search-${GITHUB_RUN_ID}"
-          KC_PW="$(openssl rand -base64 24)"
-          security default-keychain -d user | sed -E 's/^[[:space:]]*"//; s/"[[:space:]]*$//' > "$ORIG_DEFAULT" || true
-          security list-keychains -d user | sed -E 's/^[[:space:]]*"//; s/"[[:space:]]*$//' > "$ORIG_SEARCH" || true
-          printf '%s' "$CSC_LINK" | openssl base64 -d -A > "$P12"
-          security create-keychain -p "$KC_PW" "$KEYCHAIN"
-          security set-keychain-settings -ut 21600 "$KEYCHAIN"
-          security unlock-keychain -p "$KC_PW" "$KEYCHAIN"
-          security import "$P12" -k "$KEYCHAIN" -P "$CSC_KEY_PASSWORD" \
-            -T /usr/bin/codesign -T /usr/bin/security -T /usr/bin/productsign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PW" "$KEYCHAIN" >/dev/null
-          rm -f "$P12"
-          for ca in DeveloperIDG2CA DeveloperIDCA; do
-            curl -fsSL "https://www.apple.com/certificateauthority/${ca}.cer" -o "$RUNNER_TEMP/${ca}-${GITHUB_RUN_ID}.cer"
-            security import "$RUNNER_TEMP/${ca}-${GITHUB_RUN_ID}.cer" -k "$KEYCHAIN" >/dev/null 2>&1 || true
-            rm -f "$RUNNER_TEMP/${ca}-${GITHUB_RUN_ID}.cer"
-          done
-          existing=()
-          while IFS= read -r kc; do [ -n "$kc" ] && existing+=("$kc"); done < "$ORIG_SEARCH"
-          if [ "${#existing[@]}" -gt 0 ]; then
-            security list-keychains -d user -s "$KEYCHAIN" "${existing[@]}"
-          else
-            security list-keychains -d user -s "$KEYCHAIN"
-          fi
-          IDENTITY_HASH="$(security find-identity -v -p codesigning "$KEYCHAIN" | grep -F "$APPLE_SIGNING_IDENTITY" | grep -oE '[0-9A-Fa-f]{40}' | head -1)"
-          if ! printf '%s' "$IDENTITY_HASH" | grep -qE '^[0-9A-Fa-f]{40}$'; then
-            echo "::error::No unambiguous governed Developer ID identity was found in the isolated keychain" >&2
-            exit 1
-          fi
-          {
-            echo "EASYBOOKS_KEYCHAIN=$KEYCHAIN"
-            echo "EASYBOOKS_ORIG_DEFAULT=$ORIG_DEFAULT"
-            echo "EASYBOOKS_ORIG_SEARCH=$ORIG_SEARCH"
-            echo "CODESIGN_IDENTITY=$IDENTITY_HASH"
-          } >> "$GITHUB_ENV"
-          PROBE="$RUNNER_TEMP/easybooks-codesign-probe-${GITHUB_RUN_ID}"
-          cp /bin/echo "$PROBE"
-          codesign --force --options runtime --keychain "$KEYCHAIN" --sign "$IDENTITY_HASH" "$PROBE"
-          codesign --verify --strict "$PROBE"
-          rm -f "$PROBE"
+          bash scripts/official-plugin/sign-macos-cli.sh bootstrap
 
       - name: Assemble and sign stage
         run: |
@@ -134,8 +92,7 @@ jobs:
           cp target/aarch64-apple-darwin/release/easybooks "$STAGE/cli-aarch64-apple-darwin/easybooks"
           cp target/x86_64-pc-windows-gnu/release/easybooks.exe "$STAGE/cli-x86_64-pc-windows-gnu/easybooks.exe"
           chmod +x "$STAGE/cli-aarch64-apple-darwin/easybooks"
-          codesign --force --options runtime --timestamp --keychain "$EASYBOOKS_KEYCHAIN" --sign "$CODESIGN_IDENTITY" "$STAGE/cli-aarch64-apple-darwin/easybooks"
-          codesign --verify --strict --verbose=2 "$STAGE/cli-aarch64-apple-darwin/easybooks"
+          bash scripts/official-plugin/sign-macos-cli.sh sign "$STAGE/cli-aarch64-apple-darwin/easybooks"
           if [ "$IS_TAG" = "true" ]; then
             python3 scripts/assert_plugin_version.py --tag "$VERSION" --root . --binary "$STAGE/cli-aarch64-apple-darwin/easybooks"
           else
@@ -146,16 +103,10 @@ jobs:
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_NOTARIZE_PASS: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: |
           set -euo pipefail
-          ZIP="$RUNNER_TEMP/easybooks-notarize.zip"
-          ditto -c -k --keepParent "$STAGE/cli-aarch64-apple-darwin/easybooks" "$ZIP"
-          xcrun notarytool submit "$ZIP" \
-            --apple-id "$APPLE_ID" \
-            --team-id "$APPLE_TEAM_ID" \
-            --password "$APPLE_NOTARIZE_PASS" \
-            --wait
+          bash scripts/official-plugin/sign-macos-cli.sh notarize "$STAGE/cli-aarch64-apple-darwin/easybooks"
 
       - name: Seal immutable signed stage
         run: |
@@ -208,18 +159,4 @@ jobs:
 
       - name: Teardown isolated signing keychain
         if: always()
-        run: |
-          KEYCHAIN_PATH="${EASYBOOKS_KEYCHAIN:-$RUNNER_TEMP/easybooks-plugin-signing-${GITHUB_RUN_ID}.keychain-db}"
-          ORIG_DEFAULT_PATH="${EASYBOOKS_ORIG_DEFAULT:-$RUNNER_TEMP/easybooks-plugin-orig-default-${GITHUB_RUN_ID}}"
-          ORIG_SEARCH_PATH="${EASYBOOKS_ORIG_SEARCH:-$RUNNER_TEMP/easybooks-plugin-orig-search-${GITHUB_RUN_ID}}"
-          security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
-          if [ -s "$ORIG_DEFAULT_PATH" ]; then
-            security default-keychain -s "$(cat "$ORIG_DEFAULT_PATH")" 2>/dev/null || true
-          fi
-          if [ -s "$ORIG_SEARCH_PATH" ]; then
-            orig=()
-            while IFS= read -r kc; do [ -n "$kc" ] && orig+=("$kc"); done < "$ORIG_SEARCH_PATH"
-            [ "${#orig[@]}" -gt 0 ] && security list-keychains -d user -s "${orig[@]}" 2>/dev/null || true
-          fi
-          rm -f "$RUNNER_TEMP/easybooks-plugin-certificate-${GITHUB_RUN_ID}.p12" \
-            "$ORIG_DEFAULT_PATH" "$ORIG_SEARCH_PATH" 2>/dev/null || true
+        run: bash scripts/official-plugin/sign-macos-cli.sh teardown

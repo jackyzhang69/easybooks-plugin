@@ -7,7 +7,8 @@ use std::io::{self, IsTerminal, Read, Write};
 
 /// `easybooks login --token-stdin [--base-url <url>]`
 ///
-/// Persists `{ api_key, base_url }` to ~/.easybooks/config.json (mode 0600).
+/// Persists `{ base_url }` to ~/.jackyzhang.app/easybooks/config.json (mode 0600).
+/// The portal token goes to the shared user slot, never this file.
 /// The key is the user's personal EasyBooks API key; it both authenticates and
 /// identifies the user, so there is no owner id to capture. The key is never
 /// echoed — output reports the masked form only.

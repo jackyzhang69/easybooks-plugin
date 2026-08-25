@@ -1,3 +1,9 @@
+## 0.5.19
+
+- Runtime config lives at `~/.jackyzhang.app/easybooks/config.json`. Existing
+  `~/.easybooks/config.json` is read once and migrated. Portal token stays in
+  the shared user slot.
+
 ## 0.5.17
 
 - Product HTTP exchanges `aud=eb` and sends the short-lived app JWT (memory
