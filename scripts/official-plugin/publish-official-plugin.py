@@ -372,20 +372,30 @@ def require_package_catalog_name(staged: Path, catalog: str) -> None:
         raise PublishError(f"codex plugin.json name {codex_name!r} is not catalog {catalog!r}")
 
 
+def _git_tracks(marketplace: Path, rel: str) -> bool:
+    proc = subprocess.run(
+        ["git", "-C", str(marketplace), "ls-files", "--error-unmatch", "--", rel],
+        capture_output=True,
+        text=True,
+    )
+    return proc.returncode == 0
+
+
+def marketplace_git_paths(marketplace: Path, catalog: str) -> list[str]:
+    paths = [
+        f"plugins/{catalog}",
+        ".claude-plugin/marketplace.json",
+        ".agents/plugins/marketplace.json",
+    ]
+    leftover_rel = f"plugins/{leftover_cli_catalog(catalog)}"
+    if (marketplace / leftover_rel).exists() or _git_tracks(marketplace, leftover_rel):
+        paths.append(leftover_rel)
+    return paths
+
+
 def git_push_marketplace(marketplace: Path, catalog: str, version: str) -> None:
     subprocess.run(
-        [
-            "git",
-            "-C",
-            str(marketplace),
-            "add",
-            "-A",
-            "--",
-            f"plugins/{catalog}",
-            f"plugins/{leftover_cli_catalog(catalog)}",
-            ".claude-plugin/marketplace.json",
-            ".agents/plugins/marketplace.json",
-        ],
+        ["git", "-C", str(marketplace), "add", "-A", "--", *marketplace_git_paths(marketplace, catalog)],
         check=True,
     )
     status = subprocess.run(["git", "-C", str(marketplace), "status", "--porcelain"], capture_output=True, text=True, check=True)
