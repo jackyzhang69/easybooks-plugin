@@ -43,15 +43,21 @@ CATALOG_URL = os.environ.get(
     "https://account.jackyzhang.app/v1/catalog/products",
 )
 
-# plugin_id -> marketplace directory name, CLI bin, exchange aud (None = FormBro introspect)
+# plugin_id -> marketplace catalog name, CLI bin, exchange aud (None = FormBro introspect).
+# Catalog install name equals plugin_id. The `-cli` suffix is forbidden.
 PLUGINS: dict[str, dict[str, str | None]] = {
-    "anychat": {"catalog": "anychat-cli", "bin": "anychat", "aud": "anychat"},
-    "easybooks": {"catalog": "easybooks-cli", "bin": "easybooks", "aud": "eb"},
-    "formbro": {"catalog": "formbro-cli", "bin": "formbro", "aud": None},
+    "anychat": {"catalog": "anychat", "bin": "anychat", "aud": "anychat"},
+    "easybooks": {"catalog": "easybooks", "bin": "easybooks", "aud": "eb"},
+    "formbro": {"catalog": "formbro", "bin": "formbro", "aud": None},
     "anypdf": {"catalog": "anypdf", "bin": "anypdf", "aud": "anypdf"},
     "anydoc": {"catalog": "anydoc", "bin": "anydoc", "aud": "anydoc"},
-    "anyimmi": {"catalog": "anyimmi-cli", "bin": "anyimmi", "aud": "anyimmi"},
+    "anyimmi": {"catalog": "anyimmi", "bin": "anyimmi", "aud": "anyimmi"},
 }
+
+
+def leftover_cli_catalog(catalog: str) -> str:
+    """Pre-cutover marketplace name. Not an install alias."""
+    return f"{catalog}-cli"
 
 
 class PublishError(SystemExit):
@@ -96,17 +102,36 @@ def catalog_version(marketplace: Path, catalog: str) -> str | None:
 
 
 def set_catalog_version(marketplace: Path, catalog: str, version: str) -> None:
+    leftover = leftover_cli_catalog(catalog)
+    source = f"./plugins/{catalog}"
     for path in catalog_files(marketplace):
         if not path.is_file():
             continue
         data = _json_load(path)
         found = False
+        kept: list[Any] = []
         for plugin in data.get("plugins") or []:
-            if plugin.get("name") == catalog:
+            name = plugin.get("name")
+            if name == catalog:
+                if found:
+                    continue
                 plugin["version"] = version
+                plugin["source"] = source
+                kept.append(plugin)
                 found = True
+            elif name == leftover:
+                if found:
+                    continue
+                plugin["name"] = catalog
+                plugin["version"] = version
+                plugin["source"] = source
+                kept.append(plugin)
+                found = True
+            else:
+                kept.append(plugin)
         if not found:
-            raise PublishError(f"{path}: catalog has no entry {catalog}")
+            raise PublishError(f"{path}: catalog has no entry {catalog} or {leftover}")
+        data["plugins"] = kept
         path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
@@ -334,8 +359,35 @@ def package_version(staged: Path) -> str:
     return version
 
 
+def require_package_catalog_name(staged: Path, catalog: str) -> None:
+    claude = staged / ".claude-plugin" / "plugin.json"
+    name = str(_json_load(claude).get("name") or "")
+    if name != catalog:
+        raise PublishError(f"plugin.json name {name!r} is not catalog {catalog!r}")
+    codex = staged / ".codex-plugin" / "plugin.json"
+    if not codex.is_file():
+        return
+    codex_name = str(_json_load(codex).get("name") or "")
+    if codex_name != catalog:
+        raise PublishError(f"codex plugin.json name {codex_name!r} is not catalog {catalog!r}")
+
+
 def git_push_marketplace(marketplace: Path, catalog: str, version: str) -> None:
-    subprocess.run(["git", "-C", str(marketplace), "add", "-A", "--", f"plugins/{catalog}", ".claude-plugin/marketplace.json", ".agents/plugins/marketplace.json"], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(marketplace),
+            "add",
+            "-A",
+            "--",
+            f"plugins/{catalog}",
+            f"plugins/{leftover_cli_catalog(catalog)}",
+            ".claude-plugin/marketplace.json",
+            ".agents/plugins/marketplace.json",
+        ],
+        check=True,
+    )
     status = subprocess.run(["git", "-C", str(marketplace), "status", "--porcelain"], capture_output=True, text=True, check=True)
     if not status.stdout.strip():
         raise PublishError("marketplace apply produced no git diff")
@@ -355,8 +407,6 @@ def publish(
 ) -> dict[str, Any]:
     if plugin_id not in PLUGINS:
         raise PublishError(f"unknown plugin_id {plugin_id}")
-    if plugin_id == "anyimmi":
-        raise PublishError("AnyImmi official publication is frozen until bin/win32-x64 exists")
     spec = PLUGINS[plugin_id]
     catalog = str(spec["catalog"])
     bin_name = str(spec["bin"])
@@ -364,11 +414,13 @@ def publish(
     staged = staged.resolve()
     marketplace = marketplace.resolve()
     dest = marketplace / "plugins" / catalog
+    leftover_dir = marketplace / "plugins" / leftover_cli_catalog(catalog)
     before = _tree_digest(dest)
 
     require_marketplace_key(marketplace)
     require_dual_bins(staged)
     version = package_version(staged)
+    require_package_catalog_name(staged, catalog)
     bin_path = darwin_bin(staged, bin_name)
     if not os.access(bin_path, os.X_OK) and bin_path.suffix != ".py":
         bin_path.chmod(bin_path.stat().st_mode | 0o111)
@@ -420,6 +472,8 @@ def publish(
         shutil.rmtree(dest)
     shutil.copytree(staged, dest, symlinks=True)
     set_catalog_version(marketplace, catalog, version)
+    if leftover_dir.exists() and leftover_dir.resolve() != dest.resolve():
+        shutil.rmtree(leftover_dir)
     after = _tree_digest(dest)
     if after == before:
         raise PublishError("apply wrote nothing to the marketplace tree")

@@ -1,4 +1,4 @@
-# easybooks-cli — Codex / Claude Code plugin
+# easybooks — Codex / Claude Code plugin
 
 Bookkeeping for self-employed Canadians. Wraps the **EasyBooks** Rust CLI in Codex / Claude Code skills so you can drop a receipt, paste an invoice, or scan your Gmail and have it recorded straight into EasyBooks.
 

@@ -20,7 +20,7 @@ endpoint pattern we are extending: `POST /api/integrations/audit/stripe-payouts`
 
 ## 0. Naming & identity (do not vary)
 
-- Plugin name (marketplace + manifests): `easybooks-cli`
+- Plugin name (marketplace + manifests): `easybooks`
 - Display name: `EasyBooks`
 - CLI binary name: `easybooks`
 - Rust crate: package `easybooks-cli`, `[[bin]] name = "easybooks"`, lib `easybooks_cli`
@@ -210,7 +210,7 @@ Routing principle: `easybooks-capabilities` is loaded first every session and po
 
 ## 5. plugin-metadata
 
-- `.claude-plugin/plugin.json` — name `easybooks-cli`, version, author, homepage, repository, license,
+- `.claude-plugin/plugin.json` — name `easybooks`, version, author, homepage, repository, license,
   keywords (`easybooks`, `bookkeeping`, `invoices`, `self-employed`, `canada`), description.
 - `.codex-plugin/plugin.json` — superset with `skills: "./skills/"`, `min_supported_version`, and an
   `interface` block (displayName `EasyBooks`, shortDescription, longDescription, category `Productivity`,

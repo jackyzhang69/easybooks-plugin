@@ -6,7 +6,7 @@ as income, an expense, or an invoice. No spreadsheets, no double entry, no
 copy-paste between your email and your books.
 
 This is the container repo for the **EasyBooks** Codex/Claude Code plugin
-(`easybooks-cli`). The plugin wraps a bundled `easybooks` CLI; it is not a
+(`easybooks`). The plugin wraps a bundled `easybooks` CLI; it is not a
 separate re-implementation of EasyBooks business logic. The agent parses
 documents locally, then records everything through the CLI.
 
