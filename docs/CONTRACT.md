@@ -34,7 +34,7 @@ endpoint pattern we are extending: `POST /api/integrations/audit/stripe-payouts`
 Resolution order — first existing executable wins:
 1. `$EASYBOOKS_BIN` (explicit override)
 2. `$CLAUDE_PLUGIN_ROOT/bin/<platform>/easybooks` (Claude Code sets `CLAUDE_PLUGIN_ROOT`)
-3. Codex cache: `$HOME/.codex/plugins/cache/jacky-plugins/easybooks-cli/<highest-version>/bin/<platform>/easybooks`
+3. Codex cache: `$HOME/.codex/plugins/cache/jacky-plugins/easybooks/<highest-version>/bin/<platform>/easybooks`
 4. `command -v easybooks` (manual PATH install)
 
 The public bundle currently supports `darwin-arm64` and `win32-x64`; other hosts require an explicit trusted binary override or PATH installation.
@@ -194,7 +194,7 @@ Skill set:
   a terminal; never `--token` argv. Then `whoami`/`doctor`. Never log the key. Tells agent to load
   `easybooks-capabilities` next.
 - `easybooks-capabilities` — READ-FIRST router. Top-20-line intent→command table. §B binary resolver
-  (adapted to `easybooks`/`$EASYBOOKS_BIN`/`easybooks-cli` cache path). Non-negotiable operating rules
+  (adapted to `easybooks`/`$EASYBOOKS_BIN`/`easybooks` cache path). Non-negotiable operating rules
   (CLI-only boundary; local parse → CLI record). The decision tree for "user dropped a file / pasted
   invoice text / image / PDF" → parse locally → `tx import-json --dry-run` → confirm → `tx import-json`.
 - `easybooks-record` — income/expense + document/receipt ingestion. The file-import decision tree

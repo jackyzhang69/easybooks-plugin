@@ -149,7 +149,7 @@ The plugin ships a Rust CLI binary that is NOT placed on `PATH` automatically by
 
 1. **`$EASYBOOKS_BIN`** — explicit override. Honor if set.
 2. **Claude Code plugin dir** — `$CLAUDE_PLUGIN_ROOT/bin/<platform>/easybooks` (Claude Code sets `CLAUDE_PLUGIN_ROOT` when invoking a plugin's skill).
-3. **Codex plugin cache** — `$HOME/.codex/plugins/cache/jacky-plugins/easybooks-cli/<highest-version>/bin/<platform>/easybooks` where `<highest-version>` is the highest version dir present and `<platform>` matches the OS/arch.
+3. **Codex plugin cache** — `$HOME/.codex/plugins/cache/jacky-plugins/easybooks/<highest-version>/bin/<platform>/easybooks` where `<highest-version>` is the highest version dir present and `<platform>` matches the OS/arch.
 4. **`command -v easybooks`** — if the user has installed it on PATH manually (last resort).
 
 The public bundle currently supports `darwin-arm64` and `win32-x64` (binary is `easybooks.exe` on Windows). Other hosts require an explicit trusted `EASYBOOKS_BIN` or PATH installation.
@@ -171,7 +171,7 @@ _cand_paths=(
 )
 # Codex cache may have several version dirs; agent picks the *highest* one.
 # Use python sort (universally available) — POSIX `sort -V` is not portable.
-_codex_root="$HOME/.codex/plugins/cache/jacky-plugins/easybooks-cli"
+_codex_root="$HOME/.codex/plugins/cache/jacky-plugins/easybooks"
 if [ -d "$_codex_root" ]; then
   _latest_codex=$(python3 - "$_codex_root" <<'PY' 2>/dev/null
 import os, sys
@@ -193,7 +193,7 @@ for _p in "${_cand_paths[@]}"; do
 done
 
 if [ -z "$EASYBOOKS_BIN_RESOLVED" ]; then
-  echo "EasyBooks CLI not found on this host. Install the easybooks-cli plugin first." >&2
+  echo "EasyBooks CLI not found on this host. Install the easybooks plugin first." >&2
   return 1 2>/dev/null || exit 1
 fi
 export EASYBOOKS_BIN="$EASYBOOKS_BIN_RESOLVED"
@@ -206,7 +206,7 @@ export EASYBOOKS_BIN="$EASYBOOKS_BIN_RESOLVED"
 $plat = "win32-x64"
 $cands = @($env:EASYBOOKS_BIN)
 if ($env:CLAUDE_PLUGIN_ROOT) { $cands += "$env:CLAUDE_PLUGIN_ROOT\bin\$plat\easybooks.exe" }
-$codexRoot = "$env:USERPROFILE\.codex\plugins\cache\jacky-plugins\easybooks-cli"
+$codexRoot = "$env:USERPROFILE\.codex\plugins\cache\jacky-plugins\easybooks"
 if (Test-Path $codexRoot) {
   $latest = Get-ChildItem $codexRoot -Directory | Where-Object { $_.Name -match '^\d+(\.\d+){1,3}$' } | Sort-Object { [version]$_.Name } | Select-Object -Last 1
   if ($latest) { $cands += "$($latest.FullName)\bin\$plat\easybooks.exe" }

@@ -4,7 +4,7 @@
 //!   1. `$EASYBOOKS_BIN`                                  (explicit override)
 //!   2. `$CLAUDE_PLUGIN_ROOT/bin/<platform>/easybooks`    (Claude Code)
 //!   3. Codex cache:
-//!      `$HOME/.codex/plugins/cache/jacky-plugins/easybooks-cli/<highest-version>/bin/<platform>/easybooks`
+//!      `$HOME/.codex/plugins/cache/jacky-plugins/easybooks/<highest-version>/bin/<platform>/easybooks`
 //!   4. `command -v easybooks`                            (manual PATH install)
 //!
 //! `<platform>` ∈ darwin-arm64, darwin-x64, linux-x64, win32-x64 (binary
@@ -71,7 +71,7 @@ pub fn resolve_binary() -> Option<PathBuf> {
             .join("plugins")
             .join("cache")
             .join("jacky-plugins")
-            .join("easybooks-cli");
+            .join("easybooks");
         if let Some(version_dir) = highest_version_dir(&plugin_dir) {
             let p = version_dir.join("bin").join(plat).join(name);
             if is_file(&p) {

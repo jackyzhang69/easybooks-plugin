@@ -55,7 +55,7 @@
 - Tell Jacky: `easybooks feedback create|status` → accountd `product_feedback`
   for plugin_id `easybooks`; new public skill `tell-jacky`.
 
-All notable changes to the EasyBooks plugin (`easybooks-cli`) are recorded here.
+All notable changes to the EasyBooks plugin (`easybooks`) are recorded here.
 
 ## 0.5.6 — 2026-07-27
 

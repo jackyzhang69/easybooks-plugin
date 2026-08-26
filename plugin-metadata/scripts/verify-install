@@ -12,7 +12,7 @@ import subprocess
 import sys
 
 
-PLUGIN_ID = "easybooks-cli@jacky-plugins"
+PLUGIN_ID = "easybooks@jacky-plugins"
 
 
 def read_json(path: Path) -> dict:
@@ -88,7 +88,7 @@ def main() -> int:
 
     if args.loaded_skill_path:
         normalized = args.loaded_skill_path.replace("\\", "/")
-        if f"/easybooks-cli/{args.expected_version}/skills/" not in normalized:
+        if f"/easybooks/{args.expected_version}/skills/" not in normalized:
             failures.append("loaded_skill_path_version_mismatch")
 
     platform_name, binary_name = current_platform()
@@ -120,7 +120,7 @@ def main() -> int:
     result = {
         "ok": not failures,
         "failures": sorted(set(failures)),
-        "next_actions": [] if not failures else ["Reinstall easybooks-cli from jacky-plugins and rerun this verifier."],
+        "next_actions": [] if not failures else ["Reinstall easybooks from jacky-plugins and rerun this verifier."],
         "plugin_root": str(root),
         "residue": residue,
         "warnings": sorted(set(warnings)),

@@ -49,7 +49,7 @@ Each skill resolves the binary in this order — first existing executable wins:
 
 1. `$EASYBOOKS_BIN` (explicit override)
 2. `$CLAUDE_PLUGIN_ROOT/bin/<platform>/easybooks`
-3. Codex cache: `$HOME/.codex/plugins/cache/jacky-plugins/easybooks-cli/<highest-version>/bin/<platform>/easybooks`
+3. Codex cache: `$HOME/.codex/plugins/cache/jacky-plugins/easybooks/<highest-version>/bin/<platform>/easybooks`
 4. `command -v easybooks` (manual PATH install)
 
 The public bundle currently supports `darwin-arm64` and `win32-x64`. Other hosts require an explicit trusted binary override or PATH installation.

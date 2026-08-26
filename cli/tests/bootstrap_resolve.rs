@@ -23,14 +23,14 @@ fn shallow_install_path_is_not_in_cache() {
 #[test]
 fn codex_cache_layout_reports_codex_location() {
     // Synthesise the codex cache layout:
-    //   .../.codex/plugins/cache/jacky-plugins/easybooks-cli/0.1.0/bin/<plat>/easybooks
+    //   .../.codex/plugins/cache/jacky-plugins/easybooks/0.1.0/bin/<plat>/easybooks
     // ancestors[5] is the cache_root containing `.codex/plugins/cache`.
     let Some(plat) = bootstrap::current_platform() else {
         // Unsupported host platform; nothing to assert.
         return;
     };
     let exe = format!(
-        "/home/u/.codex/plugins/cache/jacky-plugins/easybooks-cli/0.1.0/bin/{plat}/easybooks"
+        "/home/u/.codex/plugins/cache/jacky-plugins/easybooks/0.1.0/bin/{plat}/easybooks"
     );
     let status = bootstrap::detect_cache_status(Some(Path::new(&exe)), "0.1.0");
     let json = status.to_json();
