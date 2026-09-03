@@ -31,6 +31,18 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
+      - name: Use local platform tree for crate fetch
+        run: |
+          set -euo pipefail
+          test -d /Users/jacky/platform/.git
+          git -C /Users/jacky/platform merge-base --is-ancestor \
+            7eeb1e3a7f4c25ff8431563d5fdbf761048021ee HEAD
+          cat > "$RUNNER_TEMP/gitconfig-platform" <<'EOF'
+          [url "/Users/jacky/platform"]
+            insteadOf = ssh://git@github.com/jackyzhang69/platform.git
+          EOF
+          echo "GIT_CONFIG_GLOBAL=$RUNNER_TEMP/gitconfig-platform" >> "$GITHUB_ENV"
+
       - name: Tool versions
         run: |
           echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
