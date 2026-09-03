@@ -1,0 +1,3 @@
+# What's new in 0.5.19
+
+This release adopts the shared Jacky plugin authentication library used across official plugins. Sign-in, token exchange, and Tell-Jacky now follow the same platform contract as other Jacky products. EasyBooks no longer reads an environment API key for login; use your Portal `jz_` token through the normal connect flow. LocalMirrorOnly mode is treated as a failure, not a successful health check, so a broken mirror cannot masquerade as ready. Doctor and whoami still report backend reachability in plain terms. Bookkeeping commands—record, invoice, Gmail import, categories, and clients—continue as before. If you previously relied on a product-local API key or env override, switch to the shared platform token once.
