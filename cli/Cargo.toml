@@ -23,6 +23,7 @@ base64.workspace = true
 dirs = "6"
 rpassword = "7"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "json"] }
+jz-plugin-common = { git = "ssh://git@github.com/jackyzhang69/platform.git", rev = "7eeb1e3" }
 
 [dev-dependencies]
 assert_cmd = "2"

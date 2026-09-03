@@ -54,18 +54,16 @@ pub fn categories_create(
     if tax_deductible {
         body.insert("tax_deductible".to_string(), json!(true));
     }
-    output::print_json(
-        &client.post("/api/integrations/categories", &serde_json::Value::Object(body))?,
-    )
+    output::print_json(&client.post(
+        "/api/integrations/categories",
+        &serde_json::Value::Object(body),
+    )?)
 }
 
 fn validate_category_type(t: &str) -> Result<()> {
     match t {
         "income" | "expense" => Ok(()),
-        _ => Err(anyhow!(
-            "--type must be income|expense (got {:?})",
-            t
-        )),
+        _ => Err(anyhow!("--type must be income|expense (got {:?})", t)),
     }
 }
 

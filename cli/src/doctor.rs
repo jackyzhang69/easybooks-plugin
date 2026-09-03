@@ -15,10 +15,11 @@
 //!   --check-upgrade  one GitHub Tags API call (non-fatal)
 
 use crate::config::{self, Config};
-use easybooks_cli::bootstrap;
 use crate::output;
 use anyhow::Result;
 use clap::Args;
+use easybooks_cli::bootstrap;
+use jz_plugin_common::doctor::CommonDoctor;
 use std::time::Duration;
 
 #[derive(Debug, Args)]
@@ -81,6 +82,10 @@ pub fn run(args: DoctorArgs, base_url_arg: Option<String>) -> Result<()> {
         serde_json::json!({ "checked": false, "upgrade_available": false })
     };
 
+    let common_section = CommonDoctor::new("easybooks", self_version)
+        .section()
+        .map_err(|error| anyhow::anyhow!("common doctor section failed: {error}"))?;
+
     let payload = serde_json::json!({
         "binary_version": self_version,
         "binary_path": self_exe
@@ -89,23 +94,19 @@ pub fn run(args: DoctorArgs, base_url_arg: Option<String>) -> Result<()> {
             .map(bootstrap::redact_home)
             .unwrap_or_default(),
         "config": config_block,
+        "common": common_section,
         "backend": backend_block,
         "cache": cache.to_json(),
         "upgrade": upgrade_block,
     });
 
     if !args.no_fetch {
-        if let Some(cfg) = &cfg {
-            if let Ok(client) = crate::client::ApiClient::from_config(cfg) {
-                let outcome = if backend_block.get("reachable").and_then(|v| v.as_bool()) == Some(true)
-                    && backend_block.get("status").and_then(|v| v.as_str()) == Some("ok")
-                {
-                    "succeeded"
-                } else {
-                    "failed"
-                };
-                crate::signals::emit_named(&client, "doctor_completed", "doctor", outcome, "doctor", None);
-            }
+        if backend_block.get("reachable").and_then(|v| v.as_bool()) == Some(true)
+            && backend_block.get("status").and_then(|v| v.as_str()) == Some("ok")
+        {
+            crate::signals::emit_named("doctor_completed", "doctor", "succeeded", "doctor", None);
+        } else if cfg.is_some() {
+            crate::signals::emit_named("doctor_completed", "doctor", "failed", "doctor", None);
         }
     }
 
@@ -136,7 +137,7 @@ fn backend_probe(cfg: Option<&Config>) -> serde_json::Value {
         Ok(body) => serde_json::json!({
             "reachable": true,
             "status": "ok",
-            "auth_kind": format!("{:?}", cfg.auth_kind),
+            "auth_kind": "exchange",
             "whoami": body,
         }),
         Err(e) => {
@@ -158,7 +159,6 @@ fn backend_probe(cfg: Option<&Config>) -> serde_json::Value {
         }
     }
 }
-
 
 fn check_marketplace_upgrade(self_version: &str) -> serde_json::Value {
     const TAGS_URL: &str =
@@ -272,6 +272,9 @@ mod tests {
     #[test]
     fn upgrade_tag_matrix_rejects_unrelated_tags() {
         let tags = json!([{"name": "v9.9.9"}, {"name": "plugin-v0.5.7-rc1"}]);
-        assert_eq!(latest_easybooks_plugin_version(tags.as_array().unwrap()), None);
+        assert_eq!(
+            latest_easybooks_plugin_version(tags.as_array().unwrap()),
+            None
+        );
     }
 }

@@ -2,6 +2,7 @@ mod client;
 mod commands;
 mod config;
 mod doctor;
+mod identity;
 mod output;
 mod signals;
 
@@ -11,7 +12,9 @@ use easybooks_cli::bootstrap;
 
 use anyhow::Result;
 use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
-use commands::{clients, dashboard, gmail, invoices, read, rules, setup, transactions, tx_ops, tx_query};
+use commands::{
+    clients, dashboard, gmail, invoices, read, rules, setup, transactions, tx_ops, tx_query,
+};
 
 #[derive(Parser)]
 #[command(name = "easybooks")]
@@ -765,9 +768,7 @@ fn dispatch(command: Command, base_url_arg: Option<String>) -> Result<()> {
                 address.as_deref(),
                 notes.as_deref(),
             ),
-            ClientsSub::Delete { client_id, force } => {
-                clients::delete(&client, &client_id, force)
-            }
+            ClientsSub::Delete { client_id, force } => clients::delete(&client, &client_id, force),
         },
         Command::Invoices(cmd) => match cmd.command {
             InvoicesSub::List { status } => read::invoices_list(&client, status),
@@ -837,8 +838,12 @@ fn dispatch(command: Command, base_url_arg: Option<String>) -> Result<()> {
             InvoiceSub::Create { json, dry_run } => invoices::create(&client, &json, dry_run),
             InvoiceSub::Send { invoice_id } => invoices::send(&client, &invoice_id),
             InvoiceSub::Get { invoice_id } => invoices::get(&client, &invoice_id),
-            InvoiceSub::Mark { invoice_id, status } => invoices::mark(&client, &invoice_id, &status),
-            InvoiceSub::Pdf { invoice_id, out } => invoices::pdf(&client, &invoice_id, out.as_deref()),
+            InvoiceSub::Mark { invoice_id, status } => {
+                invoices::mark(&client, &invoice_id, &status)
+            }
+            InvoiceSub::Pdf { invoice_id, out } => {
+                invoices::pdf(&client, &invoice_id, out.as_deref())
+            }
             InvoiceSub::Stats { year } => invoices::stats(&client, year),
         },
         Command::Gmail(cmd) => match cmd.command {
@@ -877,8 +882,10 @@ fn dispatch(command: Command, base_url_arg: Option<String>) -> Result<()> {
                 &args.idempotency_key,
                 args.user_confirmed,
             ),
-            FeedbackSubcommand::Status(args) => commands::feedback::status(&client, &args.report_id),
-        }
+            FeedbackSubcommand::Status(args) => {
+                commands::feedback::status(&client, &args.report_id)
+            }
+        },
 
         Command::Admin(cmd) => match cmd.command {
             AdminSubcommand::Login(args) => {
@@ -893,9 +900,7 @@ fn dispatch(command: Command, base_url_arg: Option<String>) -> Result<()> {
                     all,
                     limit,
                     json,
-                } => {
-                    commands::admin_feedback::list(status.as_deref(), all, limit, json)
-                }
+                } => commands::admin_feedback::list(status.as_deref(), all, limit, json),
                 AdminFeedbackSubcommand::Get { id, json } => {
                     commands::admin_feedback::get(&id, json)
                 }
@@ -1048,7 +1053,10 @@ mod tests {
             "--class",
             "deductible",
         ]);
-        assert!(result.is_err(), "invalid --class should be rejected by clap");
+        assert!(
+            result.is_err(),
+            "invalid --class should be rejected by clap"
+        );
     }
 
     #[test]
@@ -1070,8 +1078,8 @@ mod tests {
 
     #[test]
     fn parses_gmail_sync() {
-        let cli = Cli::try_parse_from(["easybooks", "gmail", "sync"])
-            .expect("gmail sync should parse");
+        let cli =
+            Cli::try_parse_from(["easybooks", "gmail", "sync"]).expect("gmail sync should parse");
         match cli.command {
             super::Command::Gmail(_) => {}
             _ => panic!("expected gmail command"),
@@ -1132,9 +1140,7 @@ mod tests {
         .expect("tx list with filters should parse");
         match cli.command {
             super::Command::Tx(cmd) => match cmd.command {
-                super::TxSub::List {
-                    limit, query, ..
-                } => {
+                super::TxSub::List { limit, query, .. } => {
                     assert_eq!(limit, Some(50));
                     assert_eq!(query.as_deref(), Some("coffee"));
                 }
@@ -1205,10 +1211,7 @@ mod tests {
         .expect("invoice mark should parse");
         match cli.command {
             super::Command::Invoice(cmd) => match cmd.command {
-                super::InvoiceSub::Mark {
-                    invoice_id,
-                    status,
-                } => {
+                super::InvoiceSub::Mark { invoice_id, status } => {
                     assert_eq!(invoice_id, "inv_123");
                     assert_eq!(status, "paid");
                 }
@@ -1288,14 +1291,8 @@ mod tests {
 
     #[test]
     fn parses_clients_delete_force() {
-        let cli = Cli::try_parse_from([
-            "easybooks",
-            "clients",
-            "delete",
-            "client_789",
-            "--force",
-        ])
-        .expect("clients delete --force should parse");
+        let cli = Cli::try_parse_from(["easybooks", "clients", "delete", "client_789", "--force"])
+            .expect("clients delete --force should parse");
         match cli.command {
             super::Command::Clients(cmd) => match cmd.command {
                 super::ClientsSub::Delete { client_id, force } => {

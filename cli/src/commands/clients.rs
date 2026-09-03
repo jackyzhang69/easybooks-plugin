@@ -57,12 +57,11 @@ pub fn create(
 
     match client.post("/api/integrations/clients", &body) {
         Ok(resp) => {
-            crate::signals::emit_named(client, "client_created", "client", "succeeded", "client", None);
+            crate::signals::emit_named("client_created", "client", "succeeded", "client", None);
             output::print_json(&resp)
         }
         Err(err) => {
             crate::signals::emit_named(
-                client,
                 "client_created",
                 "client",
                 "failed",

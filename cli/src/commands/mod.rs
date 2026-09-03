@@ -1,5 +1,7 @@
+pub mod admin_feedback;
 pub mod clients;
 pub mod dashboard;
+pub mod feedback;
 pub mod gmail;
 pub mod invoices;
 pub mod read;
@@ -8,5 +10,3 @@ pub mod setup;
 pub mod transactions;
 pub mod tx_ops;
 pub mod tx_query;
-pub mod admin_feedback;
-pub mod feedback;

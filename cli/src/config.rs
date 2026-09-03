@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use jz_plugin_common::{auth, home};
 use serde::{Deserialize, Serialize};
 use std::{
     env, fs,
@@ -19,9 +20,6 @@ pub const DEFAULT_BASE_URL: &str = "https://easybooks.jackyzhang.app";
 /// Portal account service (accountd) origin for owner-token exchange + Tell-Jacky.
 pub const DEFAULT_ACCOUNTD_URL: &str = "https://account.jackyzhang.app";
 
-/// Exchange audience for EasyBooks product APIs (catalog_id easybooks ↔ aud eb).
-pub const ACCOUNTD_AUDIENCE: &str = "eb";
-
 /// Tell-Jacky path product id (not the exchange aud).
 pub const TELL_JACKY_PRODUCT: &str = "easybooks";
 
@@ -40,73 +38,34 @@ pub struct ConfigFile {
 /// Resolved runtime config.
 #[derive(Debug, Clone)]
 pub struct Config {
-    /// Portal owner `jz_` (product HTTP exchanges aud=eb in the HTTP client).
-    pub credential: String,
     pub base_url: String,
-    pub auth_kind: AuthKind,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AuthKind {
-    /// Portal owner token (`jz_`); product calls must exchange aud=eb first.
-    PortalOwner,
 }
 
 impl Config {
     /// Resolve effective config.
     ///
-    /// Credential precedence:
-    ///   1. `$EASYBOOKS_API_KEY` (`jz_` only)
-    ///   2. shared `~/.jackyzhang.app/token/user.json`
+    /// Credential: shared `~/.jackyzhang.app/token/user.json` only (no env override).
     ///
     /// base_url: `--base-url` → `$EASYBOOKS_API_URL` → runtime config file → DEFAULT
     pub fn load(base_url_arg: Option<String>) -> Result<Self> {
         let file = read_config_file()?;
         let base_url = resolve_base_url(base_url_arg, file.as_ref().map(|c| c.base_url.clone()));
 
-        if let Ok(env_key) = env::var("EASYBOOKS_API_KEY") {
-            let env_key = env_key.trim().to_string();
-            if !env_key.is_empty() {
-                return Self::from_credential(env_key, base_url);
-            }
+        if auth::read_durable_token()?.is_none() {
+            bail!(
+                "not logged in: run 'easybooks login --token-stdin' with a portal owner token (jz_). Shared slot: ~/.jackyzhang.app/token/user.json"
+            );
         }
 
-        if let Some(portal) = read_portal_owner_token()? {
-            return Ok(Self {
-                credential: portal,
-                base_url,
-                auth_kind: AuthKind::PortalOwner,
-            });
-        }
-
-        bail!(
-            "not logged in: run 'easybooks login --token-stdin' with a portal owner token (jz_). Shared slot: ~/.jackyzhang.app/token/user.json"
-        )
-    }
-
-    fn from_credential(credential: String, base_url: String) -> Result<Self> {
-        if !credential.starts_with("jz_") {
-            bail!("EasyBooks accepts only platform jz_ credentials; eb_live_ and other product keys are retired");
-        }
-        if credential.chars().any(char::is_whitespace) {
-            bail!("portal owner token must be a single jz_ value");
-        }
-        Ok(Self {
-            credential,
-            base_url,
-            auth_kind: AuthKind::PortalOwner,
-        })
-    }
-
-    /// Backward-compatible accessor used by existing call sites.
-    #[allow(dead_code)]
-    pub fn api_key(&self) -> &str {
-        &self.credential
+        Ok(Self { base_url })
     }
 
     /// Masked form safe to print.
     pub fn api_key_masked(&self) -> String {
-        mask_key(&self.credential)
+        match auth::read_durable_token().ok().flatten() {
+            Some(token) => mask_key(&token),
+            None => "***".to_string(),
+        }
     }
 }
 
@@ -115,7 +74,11 @@ impl Config {
 pub fn resolve_base_url(base_url_arg: Option<String>, file_base_url: Option<String>) -> String {
     base_url_arg
         .filter(|u| !u.trim().is_empty())
-        .or_else(|| env::var("EASYBOOKS_API_URL").ok().filter(|u| !u.trim().is_empty()))
+        .or_else(|| {
+            env::var("EASYBOOKS_API_URL")
+                .ok()
+                .filter(|u| !u.trim().is_empty())
+        })
         .or(file_base_url)
         .filter(|u| !u.trim().is_empty())
         .unwrap_or_else(|| DEFAULT_BASE_URL.to_string())
@@ -125,7 +88,11 @@ pub fn resolve_accountd_url() -> String {
     env::var("EASYBOOKS_ACCOUNTD_URL")
         .ok()
         .filter(|u| !u.trim().is_empty())
-        .or_else(|| env::var("ANYPDF_ACCOUNTD_ORIGIN").ok().filter(|u| !u.trim().is_empty()))
+        .or_else(|| {
+            env::var("ANYPDF_ACCOUNTD_ORIGIN")
+                .ok()
+                .filter(|u| !u.trim().is_empty())
+        })
         .unwrap_or_else(|| DEFAULT_ACCOUNTD_URL.to_string())
         .trim_end_matches('/')
         .to_string()
@@ -140,14 +107,7 @@ pub fn config_path_buf() -> Result<PathBuf> {
 }
 
 fn platform_home() -> Result<PathBuf> {
-    if let Ok(override_home) = env::var("JACKYZHANG_APP_HOME") {
-        let override_home = override_home.trim();
-        if !override_home.is_empty() {
-            return Ok(PathBuf::from(override_home));
-        }
-    }
-    let home = dirs::home_dir().context("HOME is not set")?;
-    Ok(home.join(".jackyzhang.app"))
+    home::platform_home().map_err(|error| anyhow::anyhow!("{error}"))
 }
 
 fn config_file_path() -> Result<PathBuf> {
@@ -157,10 +117,6 @@ fn config_file_path() -> Result<PathBuf> {
 fn legacy_config_file_path() -> Result<PathBuf> {
     let home = dirs::home_dir().context("HOME is not set")?;
     Ok(home.join(".easybooks").join("config.json"))
-}
-
-fn portal_token_path() -> Result<PathBuf> {
-    Ok(platform_home()?.join("token").join("user.json"))
 }
 
 fn parse_config_bytes(raw: &str, path: &Path) -> Result<ConfigFile> {
@@ -205,7 +161,7 @@ fn read_config_file() -> Result<Option<ConfigFile>> {
     if let Some(key) = legacy.api_key.as_ref() {
         let key = key.trim();
         if key.starts_with("jz_") && !key.chars().any(char::is_whitespace) {
-            let _ = save_portal_owner_token(key);
+            let _ = home::write_durable_token(key);
         }
     }
     read_config_at(&config_file_path()?)
@@ -218,7 +174,10 @@ pub fn save_config(api_key: Option<&str>, base_url: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         if let Ok(metadata) = fs::symlink_metadata(parent) {
             if metadata.file_type().is_symlink() || !metadata.is_dir() {
-                bail!("config directory is not a real directory: {}", parent.display());
+                bail!(
+                    "config directory is not a real directory: {}",
+                    parent.display()
+                );
             }
         } else {
             fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
@@ -251,48 +210,9 @@ pub fn save(api_key: &str, base_url: &str) -> Result<()> {
     if !api_key.starts_with("jz_") {
         bail!("EasyBooks login accepts only platform jz_ credentials; eb_live_ keys are retired");
     }
-    save_portal_owner_token(api_key)?;
+    home::write_durable_token(api_key).map_err(|error| anyhow::anyhow!("{error}"))?;
     save_config(None, base_url)
 }
-
-pub fn save_portal_owner_token(token: &str) -> Result<()> {
-    let token = token.trim();
-    if !token.starts_with("jz_") || token.chars().any(char::is_whitespace) {
-        bail!("portal owner token must be a single jz_ value");
-    }
-    let path = portal_token_path()?;
-    if let Some(parent) = path.parent() {
-        if let Ok(metadata) = fs::symlink_metadata(parent) {
-            if metadata.file_type().is_symlink() || !metadata.is_dir() {
-                bail!("portal token directory is not a real directory: {}", parent.display());
-            }
-        } else {
-            fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
-        }
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
-            if let Some(root) = parent.parent() {
-                let _ = fs::set_permissions(root, fs::Permissions::from_mode(0o700));
-            }
-        }
-    }
-    if let Ok(metadata) = fs::symlink_metadata(&path) {
-        if metadata.file_type().is_symlink() || !metadata.is_file() {
-            bail!("portal token path is not a regular file: {}", path.display());
-        }
-    }
-    let body = serde_json::to_vec(&serde_json::json!({
-        "token": token,
-        "credential_kind": "user",
-        "slot": "user",
-    }))
-        .context("serializing portal token")?;
-    atomic_write(&path, &body, 0o600)?;
-    Ok(())
-}
-
 
 /// Shared durable admin slot for private admin feedback ops.
 pub fn admin_token_path() -> Result<PathBuf> {
@@ -309,8 +229,7 @@ pub fn read_admin_token() -> Result<Option<String>> {
             bail!("admin token path is not a regular file: {}", path.display());
         }
     }
-    let raw = fs::read_to_string(&path)
-        .with_context(|| format!("reading {}", path.display()))?;
+    let raw = fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
     let value: serde_json::Value =
         serde_json::from_str(&raw).with_context(|| format!("parsing {}", path.display()))?;
     if let Some(kind) = value.get("credential_kind").and_then(|v| v.as_str()) {
@@ -338,11 +257,13 @@ pub fn write_admin_token(token: &str) -> Result<()> {
         bail!("admin token must be a single jz_ value");
     }
     let path = admin_token_path()?;
-    // Reuse portal owner write path structure but force admin kind labels.
     if let Some(parent) = path.parent() {
         if let Ok(metadata) = fs::symlink_metadata(parent) {
             if metadata.file_type().is_symlink() || !metadata.is_dir() {
-                bail!("portal token directory is not a real directory: {}", parent.display());
+                bail!(
+                    "portal token directory is not a real directory: {}",
+                    parent.display()
+                );
             }
         } else {
             fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
@@ -379,87 +300,6 @@ pub fn clear_admin_token() -> Result<()> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(e).with_context(|| format!("remove {}", path.display())),
     }
-}
-
-
-pub fn read_portal_owner_token() -> Result<Option<String>> {
-    if let Some(token) = read_token_file(&portal_token_path()?)? {
-        return Ok(Some(token));
-    }
-    // Load-time migrate (user-seamless). Scanners removable after 2026-09-14.
-    if let Some(token) = migrate_legacy_portal_token()? {
-        return Ok(Some(token));
-    }
-    Ok(None)
-}
-
-fn read_token_file(path: &PathBuf) -> Result<Option<String>> {
-    if !path.exists() {
-        return Ok(None);
-    }
-    if let Ok(metadata) = fs::symlink_metadata(path) {
-        if metadata.file_type().is_symlink() || !metadata.is_file() {
-            bail!("portal token path is not a regular file: {}", path.display());
-        }
-    }
-    let raw = fs::read_to_string(path)
-        .with_context(|| format!("reading {}", path.display()))?;
-    let value: serde_json::Value =
-        serde_json::from_str(&raw).with_context(|| format!("parsing {}", path.display()))?;
-    if let Some(kind) = value.get("credential_kind").and_then(|v| v.as_str()) {
-        if kind != "user" {
-            return Ok(None);
-        }
-    }
-    if let Some(slot) = value.get("slot").and_then(|v| v.as_str()) {
-        if slot != "user" {
-            return Ok(None);
-        }
-    }
-    let token = value
-        .get("token")
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|s| s.starts_with("jz_") && !s.chars().any(char::is_whitespace) && !s.is_empty())
-        .map(|s| s.to_string());
-    Ok(token)
-}
-
-fn migrate_legacy_portal_token() -> Result<Option<String>> {
-    // 1) retired shared filename jz.json
-    let legacy_shared = {
-        if let Ok(override_home) = env::var("JACKYZHANG_APP_HOME") {
-            let override_home = override_home.trim();
-            if !override_home.is_empty() {
-                PathBuf::from(override_home).join("token").join("jz.json")
-            } else {
-                dirs::home_dir().context("HOME is not set")?.join(".jackyzhang.app").join("token").join("jz.json")
-            }
-        } else {
-            dirs::home_dir().context("HOME is not set")?.join(".jackyzhang.app").join("token").join("jz.json")
-        }
-    };
-    if let Some(token) = read_token_file(&legacy_shared)? {
-        save_portal_owner_token(&token)?;
-        let _ = fs::remove_file(&legacy_shared);
-        return Ok(Some(token));
-    }
-
-    // 2) product-local config.json api_key when it is already jz_
-    for path in [config_file_path()?, legacy_config_file_path()?] {
-        if let Ok(Some(file)) = read_config_at(&path) {
-            if let Some(key) = file.api_key.as_ref() {
-                let key = key.trim();
-                if key.starts_with("jz_") && !key.chars().any(char::is_whitespace) {
-                    let token = key.to_string();
-                    save_portal_owner_token(&token)?;
-                    let _ = save_config(None, &file.base_url);
-                    return Ok(Some(token));
-                }
-            }
-        }
-    }
-    Ok(None)
 }
 
 fn atomic_write(path: &PathBuf, body: &[u8], mode: u32) -> Result<()> {

@@ -29,18 +29,14 @@ fn codex_cache_layout_reports_codex_location() {
         // Unsupported host platform; nothing to assert.
         return;
     };
-    let exe = format!(
-        "/home/u/.codex/plugins/cache/jacky-plugins/easybooks/0.1.0/bin/{plat}/easybooks"
-    );
+    let exe =
+        format!("/home/u/.codex/plugins/cache/jacky-plugins/easybooks/0.1.0/bin/{plat}/easybooks");
     let status = bootstrap::detect_cache_status(Some(Path::new(&exe)), "0.1.0");
     let json = status.to_json();
     // Even though the sibling-version scan finds no real dirs (path doesn't
     // exist), the location must be detected as the codex cache and treated as
     // fresh (no newer sibling present).
-    assert_eq!(
-        json.get("location").and_then(|v| v.as_str()),
-        Some("codex")
-    );
+    assert_eq!(json.get("location").and_then(|v| v.as_str()), Some("codex"));
     assert_eq!(json.get("stale").and_then(|v| v.as_bool()), Some(false));
 }
 

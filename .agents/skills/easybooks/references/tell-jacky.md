@@ -2,10 +2,10 @@
 
 - Canonical durable user credential: `~/.jackyzhang.app/token/user.json` (`jz_` only).
 - **One connect for the whole platform.** If this file already exists from any other official plugin, do **not** ask the human to log in again.
-- On load, if `user.json` is missing but a legacy on-disk `jz_` exists (`token/user.json`, product-local config token fields), **migrate immediately** by running this product's CLI `whoami`/`doctor`/any authenticated command (load-time migrate is built in). User must feel no re-paste.
-- Only when no migratable `jz_` exists: complete connect once using the token-delivery rules below. After that, every registered plugin reuses the same slot.
+- Only when no `jz_` exists in the user slot: complete connect once using the token-delivery rules below. After that, every registered plugin reuses the same slot.
 - Never print or log the raw token. Prefer masked doctor/whoami output.
 - Do not create product-local durable token files.
+- `$EASYBOOKS_API_KEY` and other env token overrides are **not supported** — the CLI reads the shared slot only.
 
 ## Token delivery to the host agent (connect) — LOCKED 2026-08-14
 
@@ -42,7 +42,12 @@ Human → Jacky product inbox. Bound `plugin_id=easybooks`.
 1. Draft in plain language. Show the user title + description before send.
 2. Require explicit confirmation. Only then call the CLI with `--user-confirmed`.
 3. Never put tokens, keys, bank data, receipts, PDFs, or customer PII in the payload.
-4. Requires portal owner token (`jz_`) via `easybooks login --token-stdin`.
+4. Requires platform `jz_` in the shared user slot via `easybooks login --token-stdin`.
+
+## Delivery outcomes
+
+- **`accountd`** — feedback reached accountd and returned an id.
+- **`local_mirror`** — accountd was unreachable or rejected the request; the CLI still saved a local mirror at `~/.jackyzhang.app/easybooks/feedback.json`. Report the outcome honestly; do not claim server delivery.
 
 ## Submit
 

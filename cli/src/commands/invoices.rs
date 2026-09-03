@@ -53,11 +53,11 @@ pub fn create(client: &ApiClient, raw: &str, dry_run: bool) -> Result<()> {
 
     match client.post("/api/integrations/ingest/invoice", &Value::Object(body)) {
         Ok(resp) => {
-            crate::signals::emit_invoice_created(client, "succeeded", None);
+            crate::signals::emit_invoice_created("succeeded", None);
             output::print_json(&resp)
         }
         Err(err) => {
-            crate::signals::emit_invoice_created(client, "failed", Some("invoice_failed"));
+            crate::signals::emit_invoice_created("failed", Some("invoice_failed"));
             Err(err)
         }
     }
@@ -75,12 +75,11 @@ pub fn send(client: &ApiClient, invoice_id: &str) -> Result<()> {
     );
     match client.post(&path, &json!({})) {
         Ok(resp) => {
-            crate::signals::emit_named(client, "invoice_sent", "invoice", "succeeded", "invoice", None);
+            crate::signals::emit_named("invoice_sent", "invoice", "succeeded", "invoice", None);
             output::print_json(&resp)
         }
         Err(err) => {
             crate::signals::emit_named(
-                client,
                 "invoice_sent",
                 "invoice",
                 "failed",
@@ -116,12 +115,11 @@ pub fn mark(client: &ApiClient, invoice_id: &str, status: &str) -> Result<()> {
     let body = json!({ "status": status });
     match client.post(&path, &body) {
         Ok(resp) => {
-            crate::signals::emit_named(client, "invoice_marked", "invoice", "succeeded", "invoice", None);
+            crate::signals::emit_named("invoice_marked", "invoice", "succeeded", "invoice", None);
             output::print_json(&resp)
         }
         Err(err) => {
             crate::signals::emit_named(
-                client,
                 "invoice_marked",
                 "invoice",
                 "failed",
@@ -189,10 +187,7 @@ pub fn stats(client: &ApiClient, year: Option<u32>) -> Result<()> {
 fn validate_invoice_status(status: &str) -> Result<()> {
     match status {
         "paid" | "unpaid" => Ok(()),
-        _ => Err(anyhow!(
-            "--status must be paid|unpaid (got {:?})",
-            status
-        )),
+        _ => Err(anyhow!("--status must be paid|unpaid (got {:?})", status)),
     }
 }
 

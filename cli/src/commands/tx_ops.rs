@@ -59,8 +59,8 @@ pub fn attach_receipt(client: &ApiClient, transaction_id: &str, file: &str) -> R
     }
 
     let path = Path::new(file);
-    let metadata = std::fs::metadata(path)
-        .with_context(|| format!("cannot read receipt file: {}", file))?;
+    let metadata =
+        std::fs::metadata(path).with_context(|| format!("cannot read receipt file: {}", file))?;
     if !metadata.is_file() {
         return Err(anyhow!("not a regular file: {}", file));
     }
@@ -126,7 +126,10 @@ fn validate_reclass(class: &str) -> Result<()> {
 /// Returns `None` for unsupported extensions so the caller errors clearly
 /// instead of guessing a wrong type.
 pub fn guess_content_type(filename: &str) -> Option<&'static str> {
-    let ext = filename.rsplit('.').next().map(|e| e.to_ascii_lowercase())?;
+    let ext = filename
+        .rsplit('.')
+        .next()
+        .map(|e| e.to_ascii_lowercase())?;
     let ct = match ext.as_str() {
         "png" => "image/png",
         "jpg" | "jpeg" => "image/jpeg",

@@ -27,25 +27,16 @@ pub fn login_from_stdin(token_stdin: bool, base_url_arg: Option<String>) -> Resu
     if token.is_empty() || token.chars().any(char::is_whitespace) {
         bail!("token input must contain exactly one non-empty line");
     }
+    if !token.starts_with("jz_") {
+        bail!("EasyBooks login accepts only platform jz_ credentials; eb_live_ keys are retired");
+    }
     let base_url = config::resolve_base_url(base_url_arg, None);
-    let auth_kind = if token.starts_with("jz_") {
-        "portal_owner"
-    } else if token.starts_with("eb_") {
-        "api_key"
-    } else {
-        bail!("token must be a portal owner jz_ token or a legacy eb_live_ API key");
-    };
     config::save(&token, &base_url)?;
-    let path = if auth_kind == "portal_owner" {
-        "~/.jackyzhang.app/token/jz.json".to_string()
-    } else {
-        config::config_path()?
-    };
     output::print_json(&json!({
         "status": "ok",
-        "path": path,
+        "path": "~/.jackyzhang.app/token/user.json",
         "base_url": base_url,
-        "auth_kind": auth_kind,
+        "auth_kind": "exchange",
         "api_key_masked": config::mask_key(&token),
     }))
 }
