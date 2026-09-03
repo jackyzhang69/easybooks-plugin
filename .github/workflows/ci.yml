@@ -52,13 +52,16 @@ jobs:
           PY
 
       - name: Cargo build (release)
-        run: "$HOME/.cargo/bin/cargo" build --release
+        run: |
+          "$HOME/.cargo/bin/cargo" build --release
 
       - name: Cargo clippy (deny warnings)
-        run: "$HOME/.cargo/bin/cargo" clippy --release --all-targets -- -D warnings
+        run: |
+          "$HOME/.cargo/bin/cargo" clippy --release --all-targets -- -D warnings
 
       - name: Cargo test (release)
-        run: "$HOME/.cargo/bin/cargo" test --release --all-targets 2>&1 | tee /tmp/cargo-test.log
+        run: |
+          "$HOME/.cargo/bin/cargo" test --release --all-targets 2>&1 | tee /tmp/cargo-test.log
 
       - name: Skill surface vs built binary
         run: |
