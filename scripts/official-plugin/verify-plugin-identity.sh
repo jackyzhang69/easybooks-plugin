@@ -32,6 +32,9 @@ fi
 
 platform_usable() {
   local dir="$1"
+  # Require a repo root. git -C walks parents, and 69 has a stale
+  # /Users/jacky/platform sitting inside /Users/jacky/.git.
+  [ -e "$dir/.git" ] || return 1
   git -C "$dir" rev-parse --git-dir >/dev/null 2>&1 || return 1
   local head
   head="$(git -C "$dir" rev-parse HEAD)"
@@ -51,11 +54,16 @@ resolve_platform_root() {
     return
   fi
 
-  local local_platform="/Users/jacky/platform"
-  if platform_usable "$local_platform"; then
-    printf '%s\n' "$local_platform"
-    return
-  fi
+  local candidate
+  for candidate in \
+    "/Users/jacky/platform" \
+    "/Users/jacky/.local/share/platform-governance"
+  do
+    if platform_usable "$candidate"; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  done
 
   CLONED_TMP="$(mktemp -d "${TMPDIR:-/tmp}/easybooks-platform-governance.XXXXXX")"
   git clone --quiet https://github.com/jackyzhang69/platform.git "$CLONED_TMP/platform"
