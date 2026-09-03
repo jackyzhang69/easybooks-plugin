@@ -964,6 +964,8 @@ fn feedback_offline_is_local_mirror_only() {
             "--user-confirmed",
         ])
         .assert()
-        .success()
-        .stdout(predicate::str::contains(r#""delivery": "local_mirror""#));
+        .failure()
+        .stdout(predicate::str::contains(r#""status": "received""#).not())
+        .stderr(predicate::str::contains("not_delivered"))
+        .stderr(predicate::str::contains("local_mirror"));
 }

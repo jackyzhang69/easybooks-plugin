@@ -47,19 +47,17 @@ pub fn create(
         })),
     };
     let outcome = tell_jacky::submit(&PLUGIN_IDENTITY, &config::resolve_accountd_url(), draft)?;
-    let resp = match outcome {
-        FeedbackOutcome::Delivered { id } => json!({
+    match outcome {
+        FeedbackOutcome::Delivered { id } => output::print_json(&json!({
             "id": id,
             "delivery": "accountd",
             "status": "received",
-        }),
-        FeedbackOutcome::LocalMirrorOnly { reason } => json!({
-            "delivery": "local_mirror",
-            "reason": reason,
-            "status": "received",
-        }),
-    };
-    output::print_json(&resp)
+            "ok": true,
+        })),
+        FeedbackOutcome::LocalMirrorOnly { reason } => {
+            bail!("Tell Jacky not_delivered: feedback saved to local_mirror only — {reason}");
+        }
+    }
 }
 
 /// `easybooks feedback status --report-id ...`
