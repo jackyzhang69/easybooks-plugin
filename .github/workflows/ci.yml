@@ -8,7 +8,10 @@ on:
 
 jobs:
   plugin-version-gate:
-    runs-on: ubuntu-24.04
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, macOS, ARM64, easybooks-plugin-signing]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
@@ -17,19 +20,21 @@ jobs:
         run: bash scripts/assert-plugin-version-bumped.sh
 
   test:
-    # CI is credential-free and must not depend on a repository-scoped signing
-    # runner being online. The tag release remains pinned to the dedicated 69
-    # signing runner.
-    runs-on: ubuntu-24.04
-    env:
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: gcc
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_AR: ar
+    # Hosted ubuntu cannot clone private platform, so identity never ran and
+    # cargo was skipped. Same-owner PRs use the existing 69 signing runner
+    # (anyimmi/anychat pattern). Fork PRs do not run here.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, macOS, ARM64, easybooks-plugin-signing]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Tool versions
         run: |
-          rustc --version && cargo --version
+          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          "$HOME/.cargo/bin/rustc" --version && "$HOME/.cargo/bin/cargo" --version
 
       - name: Skills mirror lock-step (.claude/skills == .agents/skills)
         run: |
@@ -46,6 +51,23 @@ jobs:
           assert '[str(binary), "--json", "doctor", "--no-fetch"]' in source
           assert '[str(binary), "doctor", "--json", "--no-fetch"]' not in source
           PY
+
+      - name: Cargo build (release)
+        run: "$HOME/.cargo/bin/cargo" build --release
+
+      - name: Cargo clippy (deny warnings)
+        run: "$HOME/.cargo/bin/cargo" clippy --release --all-targets -- -D warnings
+
+      - name: Cargo test (release)
+        run: "$HOME/.cargo/bin/cargo" test --release --all-targets 2>&1 | tee /tmp/cargo-test.log
+
+      - name: Skill surface vs built binary
+        run: |
+          BIN="$("$HOME/.cargo/bin/cargo" metadata --format-version 1 --no-deps | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')/release/easybooks"
+          python3 scripts/official-plugin/assert-skill-surface.py \
+            --bin "$BIN" \
+            --skills "$(pwd)/.claude/skills/easybooks"
+          python3 scripts/assert_skill_command_contract.py
 
       - name: Read platform governance pin
         id: platform_governance_pin
@@ -64,23 +86,6 @@ jobs:
         run: |
           bash scripts/official-plugin/stage-identity-package.sh "$(pwd)/dist/identity-package"
           bash scripts/official-plugin/verify-plugin-identity.sh "$(pwd)/dist/identity-package"
-
-      - name: Cargo build (release)
-        run: cargo build --release
-
-      - name: Cargo clippy (deny warnings)
-        run: cargo clippy --release --all-targets -- -D warnings
-
-      - name: Cargo test (release)
-        run: cargo test --release --all-targets 2>&1 | tee /tmp/cargo-test.log
-
-      - name: Skill surface vs built binary
-        run: |
-          BIN="$(cargo metadata --format-version 1 --no-deps | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')/release/easybooks"
-          python3 scripts/official-plugin/assert-skill-surface.py \
-            --bin "$BIN" \
-            --skills "$(pwd)/.claude/skills/easybooks"
-          python3 scripts/assert_skill_command_contract.py
 
       - name: Upload test logs on failure
         if: failure()
