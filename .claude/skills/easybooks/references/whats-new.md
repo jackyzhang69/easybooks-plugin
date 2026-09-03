@@ -1,3 +1,3 @@
-# What's new in 0.5.19
+# What's new in 0.5.20
 
-This release adopts the shared Jacky authentication and feedback library used across official plugins. Sign-in and Tell-Jacky now follow the same product pattern you see elsewhere in the Jacky plugin family. Login no longer depends on a product-local key; you sign in through Portal as you would for other Jacky products. A broken local account mirror is treated as not ready, so the agent will not pretend the product is healthy. Feedback is only treated as delivered when the product confirms it reached the service, not when it exists only on your machine. Recording, invoicing, receipt import, categories, and clients work as before.
+This release adds a first-session brief so the host agent can tell you what EasyBooks does and what to try first, in plain language. After an update, the agent summarizes what changed and continues your original request without asking you to repeat it. Sign-in and Tell-Jacky still follow the shared Jacky product pattern used by other official plugins. A broken local account mirror is still treated as not ready. Recording, invoicing, receipt import, categories, and clients work as before.

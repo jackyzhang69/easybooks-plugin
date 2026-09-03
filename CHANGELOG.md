@@ -1,3 +1,8 @@
+## 0.5.20
+
+- First-session and update orientation briefs for the host agent. Shared
+  Jacky auth and Tell-Jacky behavior is unchanged from 0.5.19.
+
 ## 0.5.19
 
 - Runtime config lives at `~/.jackyzhang.app/easybooks/config.json`. Existing
