@@ -58,17 +58,6 @@ jobs:
           "$HOME/.cargo/bin/cargo" build --release --target aarch64-apple-darwin --bin easybooks
           "$HOME/.cargo/bin/cargo" build --release --target x86_64-pc-windows-gnu --bin easybooks
 
-      - name: Read platform governance pin
-        id: platform_governance_pin
-        run: echo "sha=$(tr -d '[:space:]' < scripts/official-plugin/PLATFORM_GOVERNANCE_REV)" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout platform governance
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          repository: jackyzhang69/platform
-          ref: ${{ steps.platform_governance_pin.outputs.sha }}
-          path: .platform-governance
-
       - name: Require signing configuration
         env:
           CODESIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -116,8 +105,6 @@ jobs:
           chmod +x "$STAGE/cli-aarch64-apple-darwin/easybooks"
 
       - name: Verify plugin identity (platform registry)
-        env:
-          PLATFORM_GOVERNANCE_ROOT: ${{ github.workspace }}/.platform-governance
         run: |
           bash scripts/official-plugin/stage-identity-package.sh "$(pwd)/dist/identity-package"
           bash scripts/official-plugin/verify-plugin-identity.sh "$(pwd)/dist/identity-package"
