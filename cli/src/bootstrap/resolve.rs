@@ -54,10 +54,7 @@ pub fn resolve_binary() -> Option<PathBuf> {
     // 2. Claude Code plugin root.
     if let (Ok(root), Some(plat)) = (std::env::var("CLAUDE_PLUGIN_ROOT"), plat) {
         if !root.is_empty() {
-            let p = PathBuf::from(root)
-                .join("bin")
-                .join(plat)
-                .join(name);
+            let p = PathBuf::from(root).join("bin").join(plat).join(name);
             if is_file(&p) {
                 return Some(p);
             }

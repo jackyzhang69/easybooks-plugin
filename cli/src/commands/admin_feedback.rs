@@ -109,7 +109,9 @@ impl AdminSession {
         if let Some(b) = body {
             req = req.header("Content-Type", "application/json").json(b);
         }
-        let resp = req.send().with_context(|| format!("{method} {path} failed"))?;
+        let resp = req
+            .send()
+            .with_context(|| format!("{method} {path} failed"))?;
         let status = resp.status().as_u16();
         let text = resp.text().unwrap_or_default();
         Ok((status, text))
@@ -355,7 +357,10 @@ mod tests {
     #[test]
     fn list_defaults_received_and_all_is_explicit() {
         assert_eq!(effective_list_status(None, false), Some("received"));
-        assert_eq!(effective_list_status(Some(" triaged "), false), Some("triaged"));
+        assert_eq!(
+            effective_list_status(Some(" triaged "), false),
+            Some("triaged")
+        );
         assert_eq!(effective_list_status(None, true), None);
     }
 }

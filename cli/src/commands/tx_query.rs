@@ -170,10 +170,7 @@ fn parse_amount_cents(raw: &str) -> Result<i64> {
         return Err(anyhow!("--amount {:?} is not a valid decimal", raw));
     }
     if frac.len() > 2 {
-        return Err(anyhow!(
-            "--amount {:?} has more than 2 decimal places",
-            raw
-        ));
+        return Err(anyhow!("--amount {:?} has more than 2 decimal places", raw));
     }
     let dollars: i64 = if whole.is_empty() {
         0

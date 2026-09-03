@@ -41,10 +41,9 @@ pub fn add(client: &ApiClient, entry_type: &str, args: AddArgs) -> Result<()> {
     // not supply one for an ad-hoc manual entry, synthesise a stable-ish id
     // from the entry's natural key so a re-run of the SAME command de-dupes
     // rather than double-recording.
-    let source_id = args
-        .source_id
-        .clone()
-        .unwrap_or_else(|| synth_source_id(entry_type, &args.date, amount_cents, &args.description));
+    let source_id = args.source_id.clone().unwrap_or_else(|| {
+        synth_source_id(entry_type, &args.date, amount_cents, &args.description)
+    });
 
     let mut entry = Map::new();
     entry.insert("type".into(), json!(entry_type));
@@ -78,13 +77,16 @@ pub fn add(client: &ApiClient, entry_type: &str, args: AddArgs) -> Result<()> {
         }));
     }
 
-    match client.post("/api/integrations/ingest/transactions", &Value::Object(body)) {
+    match client.post(
+        "/api/integrations/ingest/transactions",
+        &Value::Object(body),
+    ) {
         Ok(resp) => {
-            crate::signals::emit_posting_completed(client, "succeeded", entry_type, None);
+            crate::signals::emit_posting_completed("succeeded", entry_type, None);
             output::print_json(&resp)
         }
         Err(err) => {
-            crate::signals::emit_posting_completed(client, "failed", entry_type, Some("posting_failed"));
+            crate::signals::emit_posting_completed("failed", entry_type, Some("posting_failed"));
             Err(err)
         }
     }
@@ -109,8 +111,7 @@ pub fn build_import_body(
     raw: &str,
     default_source_system: Option<&str>,
 ) -> Result<Map<String, Value>> {
-    let value: Value =
-        serde_json::from_str(raw).context("--json is not valid JSON")?;
+    let value: Value = serde_json::from_str(raw).context("--json is not valid JSON")?;
     let obj = value
         .as_object()
         .ok_or_else(|| anyhow!("--json must be a JSON object with `entries`"))?;
@@ -143,11 +144,7 @@ pub fn build_import_body(
 }
 
 /// POST the assembled import body, or echo it under --dry-run.
-pub fn finish_import(
-    client: &ApiClient,
-    body: Map<String, Value>,
-    dry_run: bool,
-) -> Result<()> {
+pub fn finish_import(client: &ApiClient, body: Map<String, Value>, dry_run: bool) -> Result<()> {
     if dry_run {
         return output::print_json(&json!({
             "status": "dry_run",
@@ -160,11 +157,11 @@ pub fn finish_import(
         &Value::Object(body),
     ) {
         Ok(resp) => {
-            crate::signals::emit_posting_completed(client, "succeeded", "import", None);
+            crate::signals::emit_posting_completed("succeeded", "import", None);
             output::print_json(&resp)
         }
         Err(err) => {
-            crate::signals::emit_posting_completed(client, "failed", "import", Some("posting_failed"));
+            crate::signals::emit_posting_completed("failed", "import", Some("posting_failed"));
             Err(err)
         }
     }
@@ -188,11 +185,12 @@ fn validate_entry(e: &Value, index: usize) -> Result<()> {
             ty
         ));
     }
-    if !obj.get("amount_cents").map(|v| v.is_i64() || v.is_u64()).unwrap_or(false) {
-        return Err(anyhow!(
-            "entries[{}] missing integer `amount_cents`",
-            index
-        ));
+    if !obj
+        .get("amount_cents")
+        .map(|v| v.is_i64() || v.is_u64())
+        .unwrap_or(false)
+    {
+        return Err(anyhow!("entries[{}] missing integer `amount_cents`", index));
     }
     if obj.get("description").and_then(|v| v.as_str()).is_none() {
         return Err(anyhow!("entries[{}] missing string `description`", index));
@@ -231,9 +229,7 @@ pub fn parse_amount_cents(raw: &str) -> Result<i64> {
     if whole.is_empty() && frac.is_empty() {
         return Err(anyhow!("--amount \"{}\" is not a number", raw));
     }
-    if !whole.chars().all(|c| c.is_ascii_digit())
-        || !frac.chars().all(|c| c.is_ascii_digit())
-    {
+    if !whole.chars().all(|c| c.is_ascii_digit()) || !frac.chars().all(|c| c.is_ascii_digit()) {
         return Err(anyhow!("--amount \"{}\" is not a valid decimal", raw));
     }
     if frac.len() > 2 {
