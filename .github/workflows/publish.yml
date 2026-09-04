@@ -19,23 +19,9 @@ jobs:
       VERSION: ${{ github.ref_name }}
       STAGE: /tmp/easybooks-plugin-build-stage
       IS_TAG: ${{ github.event_name == 'push' }}
-      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-
-      - name: Use local platform tree for crate fetch
-        run: |
-          set -euo pipefail
-          PLATFORM_SRC="/Users/jacky/.local/share/platform-governance"
-          test -e "$PLATFORM_SRC/.git"
-          git -C "$PLATFORM_SRC" merge-base --is-ancestor \
-            7eeb1e3a7f4c25ff8431563d5fdbf761048021ee HEAD
-          cat > "$RUNNER_TEMP/gitconfig-platform" <<EOF
-          [url "$PLATFORM_SRC"]
-            insteadOf = ssh://git@github.com/jackyzhang69/platform.git
-          EOF
-          echo "GIT_CONFIG_GLOBAL=$RUNNER_TEMP/gitconfig-platform" >> "$GITHUB_ENV"
 
       - name: Ensure Rust targets
         run: |
@@ -109,7 +95,7 @@ jobs:
           set -euo pipefail
           bash scripts/official-plugin/sign-macos-cli.sh bootstrap
 
-      - name: Assemble stage
+      - name: Assemble CLI stage
         run: |
           set -euo pipefail
           rm -rf "$STAGE"
@@ -118,12 +104,24 @@ jobs:
           cp target/x86_64-pc-windows-gnu/release/easybooks.exe "$STAGE/cli-x86_64-pc-windows-gnu/easybooks.exe"
           chmod +x "$STAGE/cli-aarch64-apple-darwin/easybooks"
 
-      - name: Verify plugin identity (platform registry)
+      - name: Official plugin release-lane preflight
         run: |
-          bash scripts/official-plugin/stage-identity-package.sh "$(pwd)/dist/identity-package"
-          bash scripts/official-plugin/verify-plugin-identity.sh "$(pwd)/dist/identity-package"
+          set -euo pipefail
+          bash scripts/assemble-official-plugin.sh "$STAGE" "$RUNNER_TEMP/easybooks-staged-plugin"
+          STAGED="$RUNNER_TEMP/easybooks-staged-plugin"
+          receipt="$RUNNER_TEMP/easybooks-release-receipt.json"
+          for script in \
+            /Users/jacky/platform/governance/scripts/official-plugin/release-lane-preflight.sh \
+            /Users/jacky/.local/share/platform-governance/governance/scripts/official-plugin/release-lane-preflight.sh; do
+            if [ -f "$script" ]; then
+              bash "$script" easybooks "$STAGED" "$receipt"
+              exit 0
+            fi
+          done
+          echo "::error::release-lane-preflight.sh not found on runner" >&2
+          exit 1
 
-      - name: Sign staged binaries
+      - name: Sign macOS CLI in stage
         run: |
           set -euo pipefail
           bash scripts/official-plugin/sign-macos-cli.sh sign "$STAGE/cli-aarch64-apple-darwin/easybooks"
