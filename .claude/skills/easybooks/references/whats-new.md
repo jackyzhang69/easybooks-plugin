@@ -1,3 +1,3 @@
-# What's new in 0.5.20
+# EasyBooks — what changed in this version
 
-This release adds a first-session brief so the host agent can tell you what EasyBooks does and what to try first, in plain language. After an update, the agent summarizes what changed and continues your original request without asking you to repeat it. Sign-in and Tell-Jacky still follow the shared Jacky product pattern used by other official plugins. A broken local account mirror is still treated as not ready. Recording, invoicing, receipt import, categories, and clients work as before.
+This release improves how you are welcomed on first use and after updates. You hear a plain-language summary of what EasyBooks does and what to try next, instead of setup homework or command lists. After an update, the agent briefly explains what changed and continues your prior request without making you repeat it. Sign-in and Tell-Jacky follow the same Jacky product pattern as other official plugins. Recording expenses, importing receipts, creating invoices, and Gmail import work the same as before.

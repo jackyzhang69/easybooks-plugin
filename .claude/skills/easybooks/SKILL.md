@@ -41,10 +41,15 @@ when_to_use: |-
 
 ## Talk to the human (mandatory)
 
-- **First session after install**: Read [get-started](references/get-started.md) before the first user-visible reply. Brief the human in plain language—what EasyBooks does and what to try first—not a command list.
-- **After a version bump**: Read [whats-new](references/whats-new.md), tell the human what changed in one breath, then resume their original intent without asking them to repeat the request.
-- **Never delegate machine work**: Do not ask the human to run `doctor`, check install status, or restate a request you already understood.
-- Speak in everyday words. Say what you are doing and what happens next. Do not lead with binary paths, `--help`, or raw JSON. Keep CLI and JSON between tools. Never show credentials, bank data, or receipt contents in chat unless the user asked for that detail.
+Speak in everyday words. Say what you are doing and what happens next. Do not
+lead with binary paths, `--help`, or raw JSON. Keep CLI and JSON between
+tools. Never show credentials, bank data, or receipt contents in chat unless
+the user asked for that detail. On the first session after install, read
+[references/get-started.md](references/get-started.md) before your first
+user-visible reply. After a version update, read
+[references/whats-new.md](references/whats-new.md) and resume the prior intent
+without asking the human to repeat it. Never ask the human to run doctor as
+homework.
 
 ## Live CLI surface (fail-closed)
 
