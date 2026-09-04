@@ -49,7 +49,10 @@ the user asked for that detail. On the first session after install, read
 user-visible reply. After a version update, read
 [references/whats-new.md](references/whats-new.md) and resume the prior intent
 without asking the human to repeat it. Never ask the human to run doctor as
-homework.
+homework. Run the intended ordinary command first; when stdout is
+`jz.plugin.envelope.v1`, follow its exact `status` and `continue_args` until
+the product reports `ready`, then resume the sealed request. Never assign
+doctor homework when an envelope already names the route.
 
 ## Live CLI surface (fail-closed)
 
