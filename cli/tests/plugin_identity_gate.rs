@@ -25,8 +25,8 @@ fn plugin_identity_gate_is_wired() {
         "pin must be hexadecimal: {pin}"
     );
 
-    let ci = std::fs::read_to_string(root.join(".github/workflows/ci.yml"))
-        .expect("ci.yml must exist");
+    let ci =
+        std::fs::read_to_string(root.join(".github/workflows/ci.yml")).expect("ci.yml must exist");
     assert!(
         ci.contains("verify-plugin-identity.sh"),
         "ci.yml must invoke verify-plugin-identity.sh"

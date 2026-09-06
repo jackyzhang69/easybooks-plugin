@@ -8,8 +8,9 @@
 //! only to accountd `POST /v1/token/exchange`. Product integration routes receive
 //! the short-lived app JWT. Raw `jz_` must never appear as a product Bearer.
 //!
-//! Config is supplied via an isolated `HOME` with `token/user.json` plus
-//! `EASYBOOKS_API_URL` / `EASYBOOKS_ACCOUNTD_URL` so the tests are hermetic.
+//! Config is supplied via an isolated `HOME` + `JACKYZHANG_APP_HOME` with
+//! `token/user.json` plus `EASYBOOKS_API_URL` / `EASYBOOKS_ACCOUNTD_URL` so the
+//! tests are hermetic.
 
 use assert_cmd::Command;
 use mockito::Matcher;
@@ -72,6 +73,11 @@ fn mock_exchange(accountd: &mut mockito::Server) -> (mockito::Mock, String) {
     (mock, jwt)
 }
 
+fn isolate_platform(cmd: &mut Command, home: &std::path::Path) {
+    cmd.env("HOME", home)
+        .env("JACKYZHANG_APP_HOME", home.join(".jackyzhang.app"));
+}
+
 fn product_cmd(
     product: &mockito::Server,
     accountd: &mockito::Server,
@@ -79,8 +85,8 @@ fn product_cmd(
     let home = tempfile::tempdir().expect("tempdir");
     write_user_token(home.path(), KEY);
     let mut cmd = easybooks();
-    cmd.env("HOME", home.path())
-        .env("EASYBOOKS_API_URL", product.url())
+    isolate_platform(&mut cmd, home.path());
+    cmd.env("EASYBOOKS_API_URL", product.url())
         .env("EASYBOOKS_ACCOUNTD_URL", accountd.url())
         .env("EASYBOOKS_PORTAL_OFFLINE", "1");
     (home, cmd)
@@ -90,7 +96,7 @@ fn authed_home_cmd() -> (tempfile::TempDir, Command) {
     let home = tempfile::tempdir().expect("tempdir");
     write_user_token(home.path(), KEY);
     let mut cmd = easybooks();
-    cmd.env("HOME", home.path());
+    isolate_platform(&mut cmd, home.path());
     (home, cmd)
 }
 
@@ -314,6 +320,7 @@ fn top_level_json_flag_precedes_command_contract_matrix() {
     let home = tempfile::tempdir().expect("tempdir");
     easybooks()
         .env("HOME", home.path())
+        .env("JACKYZHANG_APP_HOME", home.path().join(".jackyzhang.app"))
         .args(["--json", "doctor", "--no-fetch"])
         .assert()
         .success()
@@ -338,6 +345,7 @@ fn login_writes_config_and_masks_key() {
     let home = tempfile::tempdir().expect("tempdir");
     easybooks()
         .env("HOME", home.path())
+        .env("JACKYZHANG_APP_HOME", home.path().join(".jackyzhang.app"))
         .args([
             "login",
             "--token-stdin",
@@ -400,6 +408,7 @@ fn loads_legacy_easybooks_home_and_migrates_to_unified_runtime() {
 
     easybooks()
         .env("HOME", home.path())
+        .env("JACKYZHANG_APP_HOME", home.path().join(".jackyzhang.app"))
         .arg("whoami")
         .assert()
         .failure(); // no backend in this test; migration must still have run
@@ -433,6 +442,7 @@ fn login_rejects_token_argument() {
         let home = tempfile::tempdir().expect("tempdir");
         easybooks()
             .env("HOME", home.path())
+            .env("JACKYZHANG_APP_HOME", home.path().join(".jackyzhang.app"))
             .args(arguments)
             .assert()
             .failure()
@@ -452,6 +462,7 @@ fn login_rejects_empty_or_multiline_stdin() {
         let home = tempfile::tempdir().expect("tempdir");
         easybooks()
             .env("HOME", home.path())
+            .env("JACKYZHANG_APP_HOME", home.path().join(".jackyzhang.app"))
             .args(["login", "--token-stdin"])
             .write_stdin(input)
             .assert()
@@ -475,6 +486,7 @@ fn login_rejects_symlinked_config_directory() {
 
     easybooks()
         .env("HOME", home.path())
+        .env("JACKYZHANG_APP_HOME", home.path().join(".jackyzhang.app"))
         .args(["login", "--token-stdin"])
         .write_stdin("jz_symlink_test\n")
         .assert()
@@ -499,6 +511,7 @@ fn login_and_load_reject_symlinked_config_file() {
 
     easybooks()
         .env("HOME", home.path())
+        .env("JACKYZHANG_APP_HOME", home.path().join(".jackyzhang.app"))
         .args(["login", "--token-stdin"])
         .write_stdin("jz_symlink_file\n")
         .assert()
@@ -507,6 +520,7 @@ fn login_and_load_reject_symlinked_config_file() {
         .stderr(predicate::str::contains("jz_symlink_file").not());
     easybooks()
         .env("HOME", home.path())
+        .env("JACKYZHANG_APP_HOME", home.path().join(".jackyzhang.app"))
         .arg("whoami")
         .assert()
         .failure();
@@ -522,6 +536,7 @@ fn login_rejects_oversized_stdin() {
     let home = tempfile::tempdir().expect("home");
     easybooks()
         .env("HOME", home.path())
+        .env("JACKYZHANG_APP_HOME", home.path().join(".jackyzhang.app"))
         .args(["login", "--token-stdin"])
         .write_stdin("x".repeat(4097))
         .assert()
@@ -559,6 +574,7 @@ fn login_uses_env_base_url_when_arg_absent() {
     let home = tempfile::tempdir().expect("tempdir");
     easybooks()
         .env("HOME", home.path())
+        .env("JACKYZHANG_APP_HOME", home.path().join(".jackyzhang.app"))
         .env("EASYBOOKS_API_URL", TEST_URL)
         .args(["login", "--token-stdin"])
         .write_stdin("jz_envonly\n")
@@ -580,6 +596,7 @@ fn login_arg_overrides_env_base_url() {
     let arg_url = "http://192.168.1.69:8310";
     easybooks()
         .env("HOME", home.path())
+        .env("JACKYZHANG_APP_HOME", home.path().join(".jackyzhang.app"))
         .env("EASYBOOKS_API_URL", TEST_URL)
         .args(["login", "--token-stdin", "--base-url", arg_url])
         .write_stdin("jz_argwins\n")
@@ -601,6 +618,7 @@ fn login_defaults_to_prod_when_arg_and_env_absent() {
     let home = tempfile::tempdir().expect("tempdir");
     easybooks()
         .env("HOME", home.path())
+        .env("JACKYZHANG_APP_HOME", home.path().join(".jackyzhang.app"))
         .env_remove("EASYBOOKS_API_URL")
         .args(["login", "--token-stdin"])
         .write_stdin("jz_default\n")
@@ -710,15 +728,16 @@ fn invoice_send_posts_to_integration_route_with_bearer() {
 #[test]
 fn missing_config_is_a_structured_error() {
     let home = tempfile::tempdir().expect("tempdir");
-    // No user slot and no env override → structured not-logged-in error.
+    // No user slot and no env override → readiness envelope (skills follow it).
     easybooks()
         .env("HOME", home.path())
+        .env("JACKYZHANG_APP_HOME", home.path().join(".jackyzhang.app"))
         .env_remove("EASYBOOKS_API_URL")
         .args(["categories", "list"])
         .assert()
-        .failure()
-        .stderr(predicate::str::contains(r#""error""#))
-        .stderr(predicate::str::contains("not logged in"));
+        .success()
+        .stdout(predicate::str::contains("jz.plugin.envelope.v1"))
+        .stdout(predicate::str::contains("needs_agent"));
 }
 
 #[test]
@@ -936,11 +955,13 @@ fn env_api_key_cannot_supply_token() {
     let home = tempfile::tempdir().expect("tempdir");
     easybooks()
         .env("HOME", home.path())
+        .env("JACKYZHANG_APP_HOME", home.path().join(".jackyzhang.app"))
         .env("EASYBOOKS_API_KEY", KEY)
         .args(["whoami"])
         .assert()
-        .failure()
-        .stderr(predicate::str::contains("not logged in"));
+        .success()
+        .stdout(predicate::str::contains("jz.plugin.envelope.v1"))
+        .stdout(predicate::str::contains("needs_agent"));
 }
 
 #[test]
@@ -949,6 +970,7 @@ fn feedback_offline_is_local_mirror_only() {
     write_user_token(home.path(), KEY);
     easybooks()
         .env("HOME", home.path())
+        .env("JACKYZHANG_APP_HOME", home.path().join(".jackyzhang.app"))
         .env("EASYBOOKS_ACCOUNTD_URL", "http://127.0.0.1:1")
         .args([
             "feedback",

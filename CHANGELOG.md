@@ -1,3 +1,10 @@
+## 0.5.21
+
+- Pair session with Jacky's assistant (`easybooks pair …`). Public
+  `commands --json` lists the pair surface and still omits admin.
+- Packed skill is a product conversation router. Binary resolution prefers
+  `$EASYBOOKS_BIN`, then `~/.jackyzhang.app/plugins/easybooks/current`.
+
 ## 0.5.20
 
 - First-session and update orientation briefs for the host agent. Shared

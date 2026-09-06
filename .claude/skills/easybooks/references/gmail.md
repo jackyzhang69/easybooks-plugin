@@ -35,7 +35,7 @@ Hard rules:
 
 # EasyBooks ↔ Gmail (v1)
 
-All recording goes through the bundled `easybooks` CLI. Resolve it once via `the easybooks router/SKILL.md` §B and invoke that exact path; do not rely on ambient `PATH`.
+All recording goes through the bundled `easybooks` CLI. Resolve it once via `the easybooks router/SKILL.md` and invoke that exact path; do not rely on ambient `PATH`.
 
 ## How v1 works (read this first)
 
@@ -148,6 +148,6 @@ In v2 the CLI gains native Gmail OAuth: `gmail sync` will pull candidate receipt
 
 ## Governance
 
-- The CLI **defaults to the PROD backend** (`https://easybooks.jackyzhang.app`, the immicore eb-plugin via the eb frontend nginx `/api` proxy); the legacy Node `http://localhost:8080` is no longer the default. Override to test (`https://easybooks-test.jackyzhang.app`) or LAN (`http://192.168.1.69:8310`) via `--base-url`. Recording there is a production mutation: require the explicit current-session authorization named by the platform-vault project card (see `the easybooks router` §G), or stop.
+- The CLI **defaults to the PROD backend** (`https://easybooks.jackyzhang.app`, the immicore eb-plugin via the eb frontend nginx `/api` proxy); the legacy Node `http://localhost:8080` is no longer the default. Override to test (`https://easybooks-test.jackyzhang.app`) or LAN (`http://192.168.1.69:8310`) via `--base-url`. Recording there is a production mutation: require the explicit current-session authorization named by the platform-vault project card (see `the easybooks router` operating rules), or stop.
 - Recording requires write scope. If the CLI returns a scope/permission error, the user's platform token lacks it — have them recheck their Portal token scope. Do not send them to the EasyBooks web app to mint an API key; `eb_live_` keys are retired.
 - Never print the user's platform token; show masked identifiers only. It lives in `~/.jackyzhang.app/token/user.json`. The Gmail MCP's own credentials are separate and managed by that integration — don't echo those either.

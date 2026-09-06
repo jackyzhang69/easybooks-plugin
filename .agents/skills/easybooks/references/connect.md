@@ -63,7 +63,7 @@ Two pieces are captured:
 ## How it works
 
 1. **Obtain the user's platform Portal token (`jz_`)** — but first check whether `~/.jackyzhang.app/token/user.json` already exists; if it does, skip this step entirely and never ask again. Do **not** send the user to the EasyBooks web app to mint an API key: retired `eb_live_` product keys are rejected by the CLI. Follow the token-delivery rules at the top of this skill (file path preferred, chat paste allowed with one warning). Confirm only the backend target. **If they don't specify, the default is `https://easybooks.jackyzhang.app` (PROD).** For test work pass `https://easybooks-test.jackyzhang.app`; for a LAN dev backend pass e.g. `http://192.168.1.69:8310`.
-2. **Resolve the bundled `easybooks` binary** — defer to `the easybooks router/SKILL.md` §B (the canonical resolver: `$EASYBOOKS_BIN` → `$CLAUDE_PLUGIN_ROOT` → codex cache → `command -v`). Set `$EASYBOOKS_BIN` in the shell once; every subsequent command in every EasyBooks skill uses that exact path, not an ambient `PATH` lookup.
+2. **Resolve the bundled `easybooks` binary** — defer to `the easybooks router/SKILL.md` (prefer `$EASYBOOKS_BIN`, then `~/.jackyzhang.app/plugins/easybooks/current/bin/<platform>/easybooks`; PATH last). Set `$EASYBOOKS_BIN` in the shell once; every subsequent command in every EasyBooks skill uses that exact path, not an ambient `PATH` lookup.
 3. **Plugin cache freshness self-check (mandatory):**
 
    ```sh
@@ -145,7 +145,7 @@ Tell the user:
 > - "is EasyBooks healthy / which backend am I on" — runs `easybooks --json doctor`
 
 Then (silently, no narration) load `the easybooks router/SKILL.md`. It tells you:
-- Which skill to call for any user intent (the top-20-line router)
-- The binary resolver (§B) and Entry / invoice JSON shapes (§2)
-- The local-parse → CLI-record boundary
-- The production governance gate (§G)
+- Which skill to call for any user intent (the top router)
+- Binary resolution and the local-parse → CLI-record boundary
+- Entry / invoice JSON shapes in the record and invoice playbooks
+- The production governance gate

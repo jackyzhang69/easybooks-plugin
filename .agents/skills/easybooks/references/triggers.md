@@ -30,3 +30,6 @@ frontmatter.
 - import this spreadsheet / bank statement / CSV of expenses
 - what categories do I have
 - tell Jacky
+- connect with Jacky
+- join code from Jacky
+- pair session

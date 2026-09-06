@@ -107,6 +107,8 @@ jobs:
       - name: Official plugin release-lane preflight
         run: |
           set -euo pipefail
+          bash scripts/official-plugin/stage-identity-package.sh "$RUNNER_TEMP/easybooks-identity-package"
+          bash scripts/official-plugin/verify-plugin-identity.sh "$RUNNER_TEMP/easybooks-identity-package"
           bash scripts/assemble-official-plugin.sh "$STAGE" "$RUNNER_TEMP/easybooks-staged-plugin"
           STAGED="$RUNNER_TEMP/easybooks-staged-plugin"
           receipt="$RUNNER_TEMP/easybooks-release-receipt.json"

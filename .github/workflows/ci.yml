@@ -37,7 +37,7 @@ jobs:
           PLATFORM_SRC="/Users/jacky/.local/share/platform-governance"
           test -e "$PLATFORM_SRC/.git"
           git -C "$PLATFORM_SRC" merge-base --is-ancestor \
-            7eeb1e3a7f4c25ff8431563d5fdbf761048021ee HEAD
+            500c4d2024bbe390e46f6a93af83749e51332b89 HEAD
           cat > "$RUNNER_TEMP/gitconfig-platform" <<EOF
           [url "$PLATFORM_SRC"]
             insteadOf = ssh://git@github.com/jackyzhang69/platform.git

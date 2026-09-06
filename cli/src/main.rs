@@ -4,6 +4,7 @@ mod config;
 mod doctor;
 mod identity;
 mod output;
+mod pair;
 mod signals;
 
 // The binary/version resolver lives in the lib crate so it can be unit-tested
@@ -70,7 +71,11 @@ enum Command {
     Dashboard(DashboardCommand),
     /// Tell Jacky — submit/inspect product feedback via portal accountd.
     Feedback(FeedbackCommand),
+    /// Connect with Jacky's assistant for a live diagnosis
+    #[command(subcommand)]
+    Pair(PairCmd),
     /// Private operator surface (Tell Jacky admin feedback). Requires admin.json.
+    #[command(hide = true)]
     Admin(AdminCommand),
     /// Dump the public CLI command surface as JSON (plugin skill contract).
     #[command(name = "commands")]
@@ -171,6 +176,62 @@ enum FeedbackSubcommand {
     Create(FeedbackCreateArgs),
     /// Fetch one report by id.
     Status(FeedbackStatusArgs),
+}
+
+#[derive(Subcommand)]
+enum PairCmd {
+    /// Join with the code from Jacky's assistant after the person agrees
+    Join {
+        #[arg(long)]
+        code: String,
+        #[arg(long, default_value_t = false)]
+        user_confirmed: bool,
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// Show whether a connection is open
+    Status {
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// Send the current product envelope
+    Snapshot {
+        /// JSON envelope file; `-` reads stdin
+        #[arg(long, value_name = "PATH")]
+        envelope_json: String,
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// Show unread instructions from Jacky's assistant
+    Inbox {
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// Mark one instruction read after showing it
+    Read {
+        #[arg(long)]
+        message_id: String,
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// Send the outcome of a requested action
+    Result {
+        #[arg(long)]
+        ok: bool,
+        #[arg(long)]
+        error: Option<String>,
+        #[arg(long, value_name = "PATH")]
+        envelope_json: Option<String>,
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// End the connection
+    Close {
+        #[arg(long, default_value = "done")]
+        reason: String,
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
 }
 
 #[derive(Args)]
@@ -718,19 +779,20 @@ fn collect_public_command_paths(
 /// talks to the backend. Split out so `run` can short-circuit `login`/`doctor`.
 fn dispatch(command: Command, base_url_arg: Option<String>) -> Result<()> {
     let original_args: Vec<String> = std::env::args().skip(1).collect();
+    // Load first so leftover ~/.easybooks can migrate into the shared slot
+    // before the readiness envelope decides the user is disconnected.
+    let loaded = config::Config::load(base_url_arg);
     if jz_plugin_common::auth::read_durable_token()
         .ok()
         .flatten()
         .is_none()
     {
         let operation = easybooks_cli::envelope::operation_from_args(&original_args);
-        let envelope =
-            easybooks_cli::envelope::connection_not_ready(&operation, original_args);
+        let envelope = easybooks_cli::envelope::connection_not_ready(&operation, original_args);
         easybooks_cli::envelope::print_stdout(&envelope)?;
         std::process::exit(0);
     }
-
-    let config = config::Config::load(base_url_arg)?;
+    let config = loaded?;
     let client = client::ApiClient::from_config(&config)?;
 
     match command {
@@ -898,6 +960,27 @@ fn dispatch(command: Command, base_url_arg: Option<String>) -> Result<()> {
             FeedbackSubcommand::Status(args) => {
                 commands::feedback::status(&client, &args.report_id)
             }
+        },
+        Command::Pair(cmd) => match cmd {
+            PairCmd::Join {
+                code,
+                user_confirmed,
+                json,
+            } => pair::join(&code, user_confirmed, json),
+            PairCmd::Status { json } => pair::status(json),
+            PairCmd::Snapshot {
+                envelope_json,
+                json,
+            } => pair::snapshot(&envelope_json, json),
+            PairCmd::Inbox { json } => pair::inbox(json),
+            PairCmd::Read { message_id, json } => pair::read_message(&message_id, json),
+            PairCmd::Result {
+                ok,
+                error,
+                envelope_json,
+                json,
+            } => pair::result(ok, error.as_deref(), envelope_json.as_deref(), json),
+            PairCmd::Close { reason, json } => pair::close(&reason, json),
         },
 
         Command::Admin(cmd) => match cmd.command {
@@ -1394,6 +1477,13 @@ mod tests {
         assert!(paths.contains(&vec!["invoice".into(), "create".into()]));
         assert!(paths.contains(&vec!["feedback".into(), "create".into()]));
         assert!(paths.contains(&vec!["commands".into()]));
+        assert!(paths.contains(&vec!["pair".into(), "join".into()]));
+        assert!(paths.contains(&vec!["pair".into(), "status".into()]));
+        assert!(paths.contains(&vec!["pair".into(), "snapshot".into()]));
+        assert!(paths.contains(&vec!["pair".into(), "inbox".into()]));
+        assert!(paths.contains(&vec!["pair".into(), "read".into()]));
+        assert!(paths.contains(&vec!["pair".into(), "result".into()]));
+        assert!(paths.contains(&vec!["pair".into(), "close".into()]));
         assert!(!paths
             .iter()
             .any(|path| path.first().map(String::as_str) == Some("admin")));
@@ -1403,5 +1493,32 @@ mod tests {
             cli.command,
             super::Command::CliCommands { json: true }
         ));
+    }
+
+    #[test]
+    fn pair_join_requires_confirm_flag() {
+        let cli = Cli::try_parse_from([
+            "easybooks",
+            "pair",
+            "join",
+            "--code",
+            "ABC234",
+            "--user-confirmed",
+            "--json",
+        ])
+        .expect("pair join with confirm should parse");
+        match cli.command {
+            super::Command::Pair(super::PairCmd::Join {
+                code,
+                user_confirmed,
+                json,
+            }) => {
+                assert_eq!(code, "ABC234");
+                assert!(user_confirmed);
+                assert!(json);
+            }
+            _ => panic!("expected pair join"),
+        }
+        assert!(Cli::try_parse_from(["easybooks", "pair", "join"]).is_err());
     }
 }

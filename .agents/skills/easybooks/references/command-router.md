@@ -1,7 +1,7 @@
 # Command router and CLI paths (coverage reference)
 
 Not for first-session orientation. Host agents discover the live surface via
-`"$EASYBOOKS_BIN" commands --json`. Binary resolution: SKILL §B; file-drop tree: §C.
+`"$EASYBOOKS_BIN" commands --json`. Binary resolution: SKILL.md; file-drop tree: [record.md](record.md).
 
 ## Agent quick router
 
@@ -9,11 +9,11 @@ Not for first-session orientation. Host agents discover the live surface via
 |---|---|---|
 | "record / log a $X **expense** for `<thing>` on `<date>`" | `easybooks expense add --amount <d> --description "<t>" --date <YYYY-MM-DD> [--category <name>] [--classification business\|personal]` | references/record.md |
 | "record / log a $X **income** / payment received on `<date>`" | `easybooks income add --amount <d> --description "<t>" --date <YYYY-MM-DD> [--category <name>]` | references/record.md |
-| "here's a **receipt / invoice file** (PDF / image / Excel / CSV / email / text) — record it" | parse locally → build Entry JSON (§2) → `easybooks tx import-json --json '<json>' --dry-run` → show user → rerun without `--dry-run` | references/record.md |
+| "here's a **receipt / invoice file** (PDF / image / Excel / CSV / email / text) — record it" | parse locally → build Entry JSON → `easybooks tx import-json --json '<json>' --dry-run` → show user → rerun without `--dry-run` | references/record.md |
 | "record **several** transactions / a statement / a spreadsheet of expenses" | parse locally → batch Entry JSON → `easybooks tx import-json --json '<json>' --dry-run` → confirm → rerun | references/record.md |
 | "this is **personal / mixed**, not business" / "**fix the classification**" | `easybooks tx reclassify <id> --class business\|mixed\|personal [--learn]` (`--learn` remembers the sender) | references/record.md |
 | "**attach** the receipt / PDF to this transaction" | `easybooks tx attach-receipt <id> --file <path>` (reads locally, <=10MB, base64; prints `receipt_url`) | references/record.md |
-| "**create an invoice** for `<client>` for `<items>`" | resolve client → build invoice JSON (§2) → `easybooks invoice create --json '<json>' --dry-run` → confirm → rerun | references/invoice.md |
+| "**create an invoice** for `<client>` for `<items>`" | resolve client → build invoice JSON → `easybooks invoice create --json '<json>' --dry-run` → confirm → rerun | references/invoice.md |
 | "**send** invoice `<id>` / email the invoice/receipt" | `easybooks invoice send <invoice_id>` (CONFIRM first — it emails the client) | references/invoice.md |
 | "**scan my Gmail** for receipts / invoices and record them" | read candidates via Gmail MCP → extract to Entry JSON with `source_id` = Gmail message id → `easybooks gmail record --json '<json>' --dry-run` → confirm → rerun | references/gmail.md |
 | "**find / search** a transaction by type / category / date / amount / text" | `easybooks tx list [--type income\|expense] [--classification business\|mixed\|personal\|unclassified] [--review needs_review\|reviewed] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--query <q>] [--limit n]` | references/record.md |
@@ -32,6 +32,7 @@ Not for first-session orientation. Host agents discover the live surface via
 | "is EasyBooks **healthy** / which backend am I on / token still valid" | `easybooks --json doctor` (local config + backend round-trip + version) | SKILL.md |
 | "**connect** EasyBooks / save my platform token / set it up" | `references/connect.md` → `easybooks login --token-stdin [--base-url <url>]` | references/connect.md |
 | "EasyBooks **out of date**?" | `easybooks --json doctor --no-fetch --check-upgrade` | references/connect.md |
+| "**connect with Jacky** / pair session / join code" | `easybooks pair join --code <CODE> --user-confirmed`, then `pair status` / `pair snapshot` / `pair inbox` / `pair read` / `pair result` / `pair close` | references/pair-session.md |
 
 ## Skill router by user intent
 
@@ -42,6 +43,7 @@ Not for first-session orientation. Host agents discover the live surface via
 | "create an invoice", "send invoice X", "list my clients / invoices" | [invoice](invoice.md) | `invoice create` / `invoice send` / `clients` / `invoices list` |
 | "scan my Gmail for receipts / invoices and record them" | [gmail](gmail.md) | Gmail MCP read → `gmail record` |
 | "is my plugin healthy / which backend am I on" | SKILL.md | `easybooks --json doctor` |
+| "connect with Jacky / pair session / join code from Jacky" | [pair-session](pair-session.md) | `pair join` then `pair snapshot` / `pair inbox` |
 
 ## Complete CLI surface by responsibility
 
@@ -57,6 +59,8 @@ Not for first-session orientation. Host agents discover the live surface via
 | Invoices | `invoice get <id>`, `invoice create --json '<json>' [--dry-run]`, `invoice send <invoice_id>`, `invoice mark <id> --status paid\|unpaid`, `invoice pdf <id> [--out <path>]`, `invoice stats [--year YYYY]`, `invoices list [--status <s>]` |
 | Rules (auto-categorization) | `rules list`, `rules show <id>`, `rules create --json '<json>'`, `rules delete <id>`, `rules enable\|disable <id>`, `rules apply --scope <all\|unclassified\|selected> [--ids ..] [--rule-ids ..] [--only-auto-apply] [--commit]` |
 | Gmail (v1) | `gmail record --json '<json>' [--dry-run]`, `gmail sync` |
+| Pair session | `pair join`, `pair status`, `pair snapshot`, `pair inbox`, `pair read`, `pair result`, `pair close` |
+| Tell Jacky | `feedback create`, `feedback status` |
 | Public command list | `commands` |
 
 Treat `"$EASYBOOKS_BIN" --help` as runtime truth when docs and code drift.
@@ -73,4 +77,16 @@ Treat `"$EASYBOOKS_BIN" --help` as runtime truth when docs and code drift.
 | "disable / pause rule `<id>`" | `easybooks rules disable <rule_id>` |
 | "apply / run my rules over transactions" | `easybooks rules apply --scope <all\|unclassified\|selected> [--ids a,b] [--rule-ids r1,r2] [--only-auto-apply] [--commit]` |
 
-Rule shape, preview/commit behavior, and examples remain in SKILL §R.
+**Rule shape** (do not invent fields): `name`, `priority` (integer, **lower = evaluated first**), `enabled`, `match_type` (`all` = every condition must hold | `any` = at least one), `apply_to` (`income` | `expense` | `both`), `auto_apply`, `stop_on_match`, `conditions[]`, `actions[]`.
+
+- **condition**: `field` ∈ `description` | `amount` | `type` | `sender_domain`; `operator` ∈ `contains` | `not_contains` | `equals` | `not_equals` | `starts_with` | `ends_with` | `gt` | `gte` | `lt` | `lte`; `value` (string).
+- **action**: `action_type` `set_category` (with `category_id`) **OR** `set_classification` (with `classification` ∈ `business` | `mixed` | `personal`). Resolve `category_id` first via `easybooks categories list` — never invent it.
+
+**`rules apply` defaults to a PREVIEW (dry-run)** — it reports what *would* change without writing. Add `--commit` to actually write. `--scope` is `all` | `unclassified` | `selected` (pair `selected` with `--ids a,b`); `--rule-ids` limits which rules run; `--only-auto-apply` restricts to rules whose `auto_apply` is true. Always show the preview to the user before re-running with `--commit`.
+
+Compact `create --json` example — auto-mark anything from a vendor domain as business:
+```json
+{ "name": "ACME → business", "priority": 100, "enabled": true, "match_type": "all", "apply_to": "expense", "auto_apply": true, "stop_on_match": true,
+  "conditions": [ { "field": "sender_domain", "operator": "contains", "value": "acme.com" } ],
+  "actions": [ { "action_type": "set_classification", "classification": "business" } ] }
+```

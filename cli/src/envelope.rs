@@ -1,16 +1,12 @@
 //! Typed readiness envelope (`jz.plugin.envelope.v1`) for ordinary product paths.
 
-use jz_plugin_common::envelope::{
-    AgentNeed, Envelope, Materiality, Sensitivity, ENVELOPE_SCHEMA,
-};
+use jz_plugin_common::envelope::{AgentNeed, Envelope, Materiality, Sensitivity};
 use sha2::{Digest, Sha256};
 
 pub const PRODUCT: &str = "easybooks";
 
 pub fn operation_from_args(args: &[String]) -> String {
-    args.first()
-        .cloned()
-        .unwrap_or_else(|| "unknown".into())
+    args.first().cloned().unwrap_or_else(|| "unknown".into())
 }
 
 pub fn progress_fingerprint(status: &str) -> String {
@@ -67,7 +63,7 @@ pub fn print_stdout(envelope: &Envelope) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use jz_plugin_common::envelope::Status;
+    use jz_plugin_common::envelope::{Status, ENVELOPE_SCHEMA};
 
     #[test]
     fn connection_not_ready_validates() {

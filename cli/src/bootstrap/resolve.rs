@@ -2,10 +2,12 @@
 //!
 //! Resolution order (contract §0) — first existing executable wins:
 //!   1. `$EASYBOOKS_BIN`                                  (explicit override)
-//!   2. `$CLAUDE_PLUGIN_ROOT/bin/<platform>/easybooks`    (Claude Code)
-//!   3. Codex cache:
+//!   2. Canonical current package:
+//!      `~/.jackyzhang.app/plugins/easybooks/current/bin/<platform>/easybooks`
+//!   3. `$CLAUDE_PLUGIN_ROOT/bin/<platform>/easybooks`    (Claude Code)
+//!   4. Codex cache:
 //!      `$HOME/.codex/plugins/cache/jacky-plugins/easybooks/<highest-version>/bin/<platform>/easybooks`
-//!   4. `command -v easybooks`                            (manual PATH install)
+//!   5. `command -v easybooks`                            (manual PATH install)
 //!
 //! `<platform>` ∈ darwin-arm64, darwin-x64, linux-x64, win32-x64 (binary
 //! `easybooks.exe` on win32-x64).
@@ -51,7 +53,21 @@ pub fn resolve_binary() -> Option<PathBuf> {
         }
     }
 
-    // 2. Claude Code plugin root.
+    // 2. Canonical current package.
+    if let (Ok(home), Some(plat)) = (jz_plugin_common::home::platform_home(), plat) {
+        let p = home
+            .join("plugins")
+            .join("easybooks")
+            .join("current")
+            .join("bin")
+            .join(plat)
+            .join(name);
+        if is_file(&p) {
+            return Some(p);
+        }
+    }
+
+    // 3. Claude Code plugin root.
     if let (Ok(root), Some(plat)) = (std::env::var("CLAUDE_PLUGIN_ROOT"), plat) {
         if !root.is_empty() {
             let p = PathBuf::from(root).join("bin").join(plat).join(name);
@@ -77,7 +93,7 @@ pub fn resolve_binary() -> Option<PathBuf> {
         }
     }
 
-    // 4. PATH lookup (`command -v easybooks`).
+    // 5. PATH lookup (`command -v easybooks`).
     if let Some(p) = which_on_path(name) {
         return Some(p);
     }
