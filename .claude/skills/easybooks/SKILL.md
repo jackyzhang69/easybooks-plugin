@@ -62,6 +62,7 @@ Ask the live CLI, never from memory of an older release:
 
 ```bash
 "$EASYBOOKS_BIN" commands --json
+easybooks --json doctor
 ```
 
 ## Agent router — intents
