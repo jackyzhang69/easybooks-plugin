@@ -43,6 +43,7 @@ jobs:
       - name: Verify source
         run: |
           set -euo pipefail
+          bash scripts/official-plugin/seed-jz-plugin-common.sh
           bash scripts/sync-skills.sh
           "$HOME/.cargo/bin/cargo" clippy --workspace --all-targets -- -D warnings
           "$HOME/.cargo/bin/cargo" test --workspace --all-targets

@@ -1,22 +1,6 @@
-# Cross-compilation linker configuration.
-# Required when building non-host targets in CI / locally on macOS.
-#
-# Host install:
-#   Windows GNU: brew install mingw-w64
-#   Linux:       messense's prebuilt macOS cross-toolchains
-#                  https://github.com/messense/homebrew-macos-cross-toolchains
-
-[net]
-git-fetch-with-cli = true
-
-[target.x86_64-pc-windows-gnu]
-linker = "x86_64-w64-mingw32-gcc"
-ar = "x86_64-w64-mingw32-ar"
-
-[target.aarch64-unknown-linux-gnu]
-linker = "aarch64-unknown-linux-gnu-gcc"
-ar = "aarch64-unknown-linux-gnu-ar"
-
-[target.x86_64-unknown-linux-gnu]
-linker = "x86_64-unknown-linux-gnu-gcc"
-ar = "x86_64-unknown-linux-gnu-ar"
+# Compile the shared crate from the pinned vendor snapshot. Cargo.toml still
+# records the platform git rev; scripts/official-plugin/seed-jz-plugin-common.sh
+# verifies vendor/jz-plugin-common matches that rev. CI cannot SSH to the
+# private platform repository.
+[patch."ssh://git@github.com/jackyzhang69/platform.git"]
+jz-plugin-common = { path = "vendor/jz-plugin-common" }

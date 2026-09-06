@@ -31,18 +31,8 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - name: Use local platform tree for crate fetch
-        run: |
-          set -euo pipefail
-          PLATFORM_SRC="/Users/jacky/.local/share/platform-governance"
-          test -e "$PLATFORM_SRC/.git"
-          git -C "$PLATFORM_SRC" merge-base --is-ancestor \
-            500c4d2024bbe390e46f6a93af83749e51332b89 HEAD
-          cat > "$RUNNER_TEMP/gitconfig-platform" <<EOF
-          [url "$PLATFORM_SRC"]
-            insteadOf = ssh://git@github.com/jackyzhang69/platform.git
-          EOF
-          echo "GIT_CONFIG_GLOBAL=$RUNNER_TEMP/gitconfig-platform" >> "$GITHUB_ENV"
+      - name: Verify vendored jz-plugin-common pin
+        run: bash scripts/official-plugin/seed-jz-plugin-common.sh
 
       - name: Tool versions
         run: |
